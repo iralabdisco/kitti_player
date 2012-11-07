@@ -1,0 +1,14 @@
+<package>
+  <description brief="kitty_player">
+
+     kitty_player
+
+  </description>
+  <author>sacchi</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/kitty_player</url>
+
+</package>
+
+
