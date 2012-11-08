@@ -1,13 +1,20 @@
 <package>
-  <description brief="kitty_player">
+	<description brief="kitty_player">
 
-     kitty_player
+	 kitty_player
 
-  </description>
-  <author>sacchi</author>
-  <license>BSD</license>
-  <review status="unreviewed" notes=""/>
-  <url>http://ros.org/wiki/kitty_player</url>
+	</description>
+	<author>sacchi</author>
+	<license>BSD</license>
+	<review status="unreviewed" notes=""/>
+	<url>http://ros.org/wiki/kitty_player</url>
+	<depend package="roscpp"/>
+	<depend package="bullet"/>
+	<depend package="sensor_msgs"/>
+	<depend package="tf"/>
+	<depend package="rospy"/>
+	<depend package="dynamic_reconfigure"/>
+	<depend package="pcl_ros"/>
 
 </package>
 
