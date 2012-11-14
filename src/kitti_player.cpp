@@ -30,6 +30,8 @@ std::string camera_ref_zero_frame;
 std::string robot_frame;
 std::string odom_frame;
 
+tf::Transform readTransform;
+
 void callback(kitti_player::kitti_playerConfig &config, uint32_t level)
 {
 
@@ -62,8 +64,6 @@ void publish_pose()
   }
   else
   {
-    static tf::TransformBroadcaster br;
-    tf::Transform transform;
     std::string line;
     getline(*poseFile, line);
 
@@ -83,34 +83,41 @@ void publish_pose()
 
 
 
-    transform.setOrigin( tf::Vector3(values[3], values[7], values[11]) );
+    readTransform.setOrigin( tf::Vector3(values[3], values[7], values[11]) );
     
-    transform.setBasis( btMatrix3x3(values[0], values[1], values[2],values[4], values[5], values[6],values[8], values[9], values[10]) );
+    readTransform.setBasis( btMatrix3x3(values[0], values[1], values[2],values[4], values[5], values[6],values[8], values[9], values[10]) );
     // transform.setIdentity();
-    br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), camera_ref_zero_frame, camera_ref_frame));
     
-    transform.setIdentity();
-    transform.setOrigin(btVector3(0.76,0,1.73));
-    br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), robot_frame, laser_frame));
-
-    transform.setIdentity();
-    transform.setOrigin(btVector3(1.03,0,1.65));
-    btQuaternion rotation;
-
-    btQuaternion rot1;
-    btQuaternion rot2;
-
-    rot1.setEuler(M_PI/2,0,0);
-    rot2.setEuler(0,-M_PI/2,0);
-    // rotation = rot1;
-    rotation = rot2*rot1;
-    
-    transform.setRotation(rotation);
-    br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), odom_frame, camera_ref_zero_frame));
-    br.sendTransform(tf::StampedTransform(transform.inverse(), ros::Time::now(), camera_ref_frame, robot_frame));
 
   }
   
+}
+
+void publish_transforms()
+{
+  static tf::TransformBroadcaster br;
+  tf::Transform transform;
+  br.sendTransform(tf::StampedTransform(readTransform, ros::Time::now(), camera_ref_zero_frame, camera_ref_frame));
+  
+  transform.setIdentity();
+  transform.setOrigin(btVector3(0.76,0,1.73));
+  br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), robot_frame, laser_frame));
+
+  transform.setIdentity();
+  transform.setOrigin(btVector3(1.03,0,1.65));
+  btQuaternion rotation;
+
+  btQuaternion rot1;
+  btQuaternion rot2;
+
+  rot1.setEuler(M_PI/2,0,0);
+  rot2.setEuler(0,-M_PI/2,0);
+  // rotation = rot1;
+  rotation = rot2*rot1;
+  
+  transform.setRotation(rotation.normalize());
+  br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), odom_frame, camera_ref_zero_frame));
+  br.sendTransform(tf::StampedTransform(transform.inverse(), ros::Time::now(), camera_ref_frame, robot_frame));
 }
 
 void publish_velodyne(ros::Publisher &pub, std::string infile)
@@ -134,7 +141,7 @@ void publish_velodyne(ros::Publisher &pub, std::string infile)
       points->push_back(point);
     }
     input.close();
-    points->header.stamp = ros::Time();
+    points->header.stamp = ros::Time::now();
     pub.publish(points);
   }
 }
@@ -169,7 +176,7 @@ int main(int argc, char **argv)
   // sequence_path = path+"/../dataset/sequences/01/velodyne/0000000000.bin";
   // pose_path = path+"/../dataset/poses/01.txt";
 
-  
+  readTransform.setIdentity();
 
   while (ros::ok())
   {
@@ -199,6 +206,7 @@ int main(int argc, char **argv)
         myConfig.publish = false;
       }
     }
+    publish_transforms();
 
     ros::spinOnce();
 
