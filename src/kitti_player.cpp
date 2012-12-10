@@ -13,7 +13,9 @@
 #include <dynamic_reconfigure/server.h>
 #include <kitti_player/kitti_playerConfig.h>
 #include <boost/algorithm/string.hpp>
-
+#include "Random.h"
+#include "randomUtil.h"
+#include "bulletUtil.h"
 std::string path;
 std::string sequence_path;
 std::string pose_path;
@@ -26,21 +28,34 @@ std::ifstream* poseFile = NULL;
 
 std::string laser_frame;
 std::string camera_ref_frame;
+std::string gt_camera_ref_frame;
 std::string camera_ref_zero_frame;
 std::string robot_frame;
+std::string gt_robot_frame;
 std::string odom_frame;
 
 tf::Transform readTransform;
+ros::Rate* loop_rate;
+
+btTransform oldPose;
+btTransform last_uncertain_pose;
 
 void callback(kitti_player::kitti_playerConfig &config, uint32_t level)
 {
 
   if (config.sequence != myConfig.sequence || config.start == false)
   {
+    oldPose.setIdentity();
+    last_uncertain_pose.setIdentity();
     frame_count = 0;
     delete poseFile;
     poseFile = NULL;
     
+  }
+  if (config.loop_rate != myConfig.loop_rate)
+  {
+    delete loop_rate;
+    loop_rate = new ros::Rate(config.loop_rate);
   }
     
   myConfig = config;
@@ -49,13 +64,16 @@ void callback(kitti_player::kitti_playerConfig &config, uint32_t level)
   {
     config.publish = false;
   }
-}
 
-void publish_pose()
+}
+/** 
+ * \brief Reads the transform from the dataset
+*/
+void read_pose()
 {
   if (!poseFile)
   {
-  std::cout << "new" << pose_path << std::endl;
+  // std::cout << "new" << pose_path << std::endl;
     poseFile = new std::ifstream(pose_path.c_str());
   
   }
@@ -67,7 +85,7 @@ void publish_pose()
     std::string line;
     getline(*poseFile, line);
 
-    std::cout << line << std::endl;
+    // std::cout << line << std::endl;
 
     std::vector<std::string> strs;
     boost::split(strs, line, boost::is_any_of("\t "));
@@ -78,26 +96,76 @@ void publish_pose()
       double numb;
       std::istringstream ( *it ) >> numb;
       values.push_back(numb);
-      std::cout << numb <<std::endl;
+      // std::cout << numb <<std::endl;
     }
 
-
-
     readTransform.setOrigin( tf::Vector3(values[3], values[7], values[11]) );
-    
     readTransform.setBasis( btMatrix3x3(values[0], values[1], values[2],values[4], values[5], values[6],values[8], values[9], values[10]) );
-    // transform.setIdentity();
-    
-
   }
-  
 }
 
-void publish_transforms()
+void publish_uncertain_pose()
+{
+  if (myConfig.generateUncertain)
+  {
+    static tf::TransformBroadcaster br;
+    // publish the groundtruth
+
+    btTransform odometryDelta;
+    odometryDelta.mult(oldPose.inverse(),readTransform);
+    // odometryDelta.getRotation().normalize();
+    if (!odometryDelta.getOrigin().isZero())
+    {
+      if (myConfig.alphaPose!=0)
+      {
+        odometryDelta.getOrigin() += odometryDelta.getOrigin()*btVector3( RandGlobal::getRandomInstance().sampleNormalDistribution(myConfig.alphaPose),
+                                                RandGlobal::getRandomInstance().sampleNormalDistribution(myConfig.alphaPose),
+                                                RandGlobal::getRandomInstance().sampleNormalDistribution(myConfig.alphaPose));
+      }
+      if (myConfig.alphaOrientation!=0)
+      {
+        double roll, pitch, yaw;
+        odometryDelta.getBasis().getRPY(roll, pitch, yaw);
+        roll += roll * RandGlobal::getRandomInstance().sampleNormalDistribution(myConfig.alphaOrientation);
+        pitch += pitch * RandGlobal::getRandomInstance().sampleNormalDistribution(myConfig.alphaOrientation);
+        yaw += yaw * RandGlobal::getRandomInstance().sampleNormalDistribution(myConfig.alphaOrientation);
+        odometryDelta.getBasis().setRPY(roll, pitch, yaw);
+        // odometryDelta.getRotation().normalize();
+      }
+
+      last_uncertain_pose *= odometryDelta;
+      // last_uncertain_pose.getRotation().normalize();
+    }
+
+    br.sendTransform(tf::StampedTransform(last_uncertain_pose, ros::Time::now(), camera_ref_zero_frame, camera_ref_frame));
+
+    oldPose = readTransform;
+    printBullet(last_uncertain_pose, "last unc pos");
+    printBullet(odometryDelta, "delta");
+  }
+}
+
+/** 
+ * \brief Publish the groundtruth of the pose
+*/
+void publish_pose_groundtruth()
+{
+  if (myConfig.generateGroundtruth)
+  {
+    static tf::TransformBroadcaster br;
+    // publish the groundtruth
+    br.sendTransform(tf::StampedTransform(readTransform, ros::Time::now(), camera_ref_zero_frame, gt_camera_ref_frame));
+    printBullet(readTransform, "read transf: gt");
+
+  }
+}
+/** 
+ * \brief Publish the reference frames of the vehicle and the odom frames
+*/
+void publish_static_transforms()
 {
   static tf::TransformBroadcaster br;
   tf::Transform transform;
-  br.sendTransform(tf::StampedTransform(readTransform, ros::Time::now(), camera_ref_zero_frame, camera_ref_frame));
   
   transform.setIdentity();
   transform.setOrigin(btVector3(0.76,0,1.73));
@@ -118,8 +186,12 @@ void publish_transforms()
   transform.setRotation(rotation.normalize());
   br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), odom_frame, camera_ref_zero_frame));
   br.sendTransform(tf::StampedTransform(transform.inverse(), ros::Time::now(), camera_ref_frame, robot_frame));
+  br.sendTransform(tf::StampedTransform(transform.inverse(), ros::Time::now(), gt_camera_ref_frame, gt_robot_frame));
 }
 
+/** 
+ * \brief Publish the velodyne data
+*/
 void publish_velodyne(ros::Publisher &pub, std::string infile)
 {
   std::fstream input(infile.c_str(), std::ios::in | std::ios::binary);
@@ -131,7 +203,8 @@ void publish_velodyne(ros::Publisher &pub, std::string infile)
     input.seekg(0, std::ios::beg);
 
     pcl::PointCloud<pcl::PointXYZI>::Ptr points (new pcl::PointCloud<pcl::PointXYZI>);
-    points->header.frame_id = laser_frame;
+    points->header.frame_id = robot_frame; // Temp fix for easier interaction
+    // points->header.frame_id = laser_frame;
 
     int i;
     for (i=0; input.good() && !input.eof(); i++) {
@@ -151,26 +224,32 @@ int main(int argc, char **argv)
 {
   ros::init(argc, argv, "kitti_player");
 
+  ros::NodeHandle n;
+  loop_rate = new ros::Rate(1);
+  Random random;
+  RandGlobal::setRandomInstance(random);
+  last_uncertain_pose.setIdentity();
+  oldPose.setIdentity();
+
   dynamic_reconfigure::Server<kitti_player::kitti_playerConfig> srv;
   dynamic_reconfigure::Server<kitti_player::kitti_playerConfig>::CallbackType f;
   f = boost::bind(&callback, _1, _2);
   srv.setCallback(f);
 
-  ros::NodeHandle n;
 
   ros::Publisher map_pub = n.advertise<pcl::PointCloud<pcl::PointXYZ> > ("/cloud_in", 10, true);
-
-  ros::Rate loop_rate(1);
 
   path = argv[0];
   std::string::size_type pos = path.find_last_of( "\\/" );
   path = path.substr( 0, pos);
 
-  n.param<std::string>("camera_ref_frame",camera_ref_frame,"camera_ref");
-  n.param<std::string>("camera_ref_zero_frame",camera_ref_zero_frame,"camera_ref_zero");
-  n.param<std::string>("laser_frame",laser_frame,"laser");
-  n.param<std::string>("robot_frame",robot_frame,"base_link");
-  n.param<std::string>("odom_frame",odom_frame,"odom");
+  n.param<std::string>("camera_ref_frame",camera_ref_frame,"/camera_ref");
+  n.param<std::string>("gt_camera_ref_frame",gt_camera_ref_frame,"/gt_camera_ref");
+  n.param<std::string>("camera_ref_zero_frame",camera_ref_zero_frame,"/camera_ref_zero");
+  n.param<std::string>("laser_frame",laser_frame,"/laser");
+  n.param<std::string>("robot_frame",robot_frame,"/base_link");
+  n.param<std::string>("gt_robot_frame",gt_robot_frame,"/gt_base_link");
+  n.param<std::string>("odom_frame",odom_frame,"/odom");
 
 
   // sequence_path = path+"/../dataset/sequences/01/velodyne/0000000000.bin";
@@ -195,22 +274,24 @@ int main(int argc, char **argv)
       std::string frame;
       ss >> frame;
       sequence_path = path+"/../dataset/sequences/"+sequence+"/velodyne/"+frame+".bin";
-      std::cout << sequence_path << std::endl;
+      // std::cout << sequence_path << std::endl;
 
-      std::cout << pose_path << std::endl;
+      // std::cout << pose_path << std::endl;
       ++frame_count;
       publish_velodyne(map_pub, sequence_path);
-      publish_pose();
+      read_pose();
       if (myConfig.publish)
       {
         myConfig.publish = false;
       }
     }
-    publish_transforms();
+    publish_static_transforms();
+    publish_pose_groundtruth();
+    publish_uncertain_pose();
 
     ros::spinOnce();
 
-    loop_rate.sleep();
+    loop_rate->sleep();
   }
 
 

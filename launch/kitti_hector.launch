@@ -1,0 +1,21 @@
+<launch>
+	<node name="kitti_player" pkg="kitti_player" type="kitti_player" output = "screen"/>
+	
+	<node name="rviz" pkg="rviz" type="rviz" />
+	<node name="reconfigure_gui" pkg="dynamic_reconfigure" type="reconfigure_gui" />
+
+	<node name="groundtruth_path" pkg="hector_trajectory_server" type="hector_trajectory_server" >
+		<remap from="trajectory" to="gt_trajectory" />
+		<param name="target_frame_name" value="odom"/>
+		<param name="source_frame_name" value="gt_base_link" />
+		<param name="trajectory_update_rate" value="6" />
+		<param name="trajectory_publish_rate" value="1" />
+	</node>
+	<node name="sampled_path" pkg="hector_trajectory_server" type="hector_trajectory_server" >
+		<param name="target_frame_name" value="odom"/>
+		<param name="source_frame_name" value="base_link" />
+		<param name="trajectory_update_rate" value="6" />
+		<param name="trajectory_publish_rate" value="1" />
+	</node>
+
+</launch>

@@ -2,7 +2,9 @@
 	"folders":
 	[
 		{
-			"path": "/home/sacchi/ros/kitti_player"
+			"path": "/home/sacchi/ros/kitti_player",
+			"folder_exclude_patterns": ["bin", "build", "doc"],
+			"file_exclude_patterns": ["*.cfgc"]
 		}
 	]
 }

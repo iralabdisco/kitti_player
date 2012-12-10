@@ -3,4 +3,5 @@
 	
 	<node name="rviz" pkg="rviz" type="rviz" />
 	<node name="reconfigure_gui" pkg="dynamic_reconfigure" type="reconfigure_gui" />
+
 </launch>

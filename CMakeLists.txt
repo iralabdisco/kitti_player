@@ -33,4 +33,7 @@ rosbuild_find_ros_package(dynamic_reconfigure)
 include(${dynamic_reconfigure_PACKAGE_PATH}/cmake/cfgbuild.cmake)
 gencfg()
 
+rosbuild_add_executable(kitti_player src/Random.cpp)
+rosbuild_add_executable(kitti_player src/randomUtil.cpp)
+rosbuild_add_executable(kitti_player src/bulletUtil.cpp)
 rosbuild_add_executable(kitti_player src/kitti_player.cpp)
