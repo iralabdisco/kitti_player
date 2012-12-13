@@ -207,8 +207,8 @@ void publish_velodyne(ros::Publisher &pub, std::string infile)
     input.seekg(0, std::ios::beg);
 
     pcl::PointCloud<pcl::PointXYZI>::Ptr points (new pcl::PointCloud<pcl::PointXYZI>);
-    points->header.frame_id = robot_frame; // Temp fix for easier interaction
-    // points->header.frame_id = laser_frame;
+    // points->header.frame_id = robot_frame; // Temp fix for easier interaction
+    points->header.frame_id = laser_frame;
 
     int i;
     for (i=0; input.good() && !input.eof(); i++) {
