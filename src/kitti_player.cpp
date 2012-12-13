@@ -144,8 +144,8 @@ void publish_uncertain_pose()
     br.sendTransform(tf::StampedTransform(last_uncertain_pose, ros::Time::now(), camera_ref_zero_frame, camera_ref_frame));
 
     oldPose = readTransform;
-    printBullet(last_uncertain_pose, "last unc pos");
-    printBullet(odometryDelta, "delta");
+    // printBullet(last_uncertain_pose, "last unc pos");
+    // printBullet(odometryDelta, "delta");
   }
 }
 
@@ -159,7 +159,7 @@ void publish_pose_groundtruth()
     static tf::TransformBroadcaster br;
     // publish the groundtruth
     br.sendTransform(tf::StampedTransform(readTransform, ros::Time::now(), camera_ref_zero_frame, gt_camera_ref_frame));
-    printBullet(readTransform, "read transf: gt");
+    // printBullet(readTransform, "read transf: gt");
 
   }
 }
