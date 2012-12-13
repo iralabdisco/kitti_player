@@ -39,7 +39,7 @@ ros::Rate* loop_rate;
 
 btTransform oldPose;
 btTransform last_uncertain_pose;
-
+bool shoudlExit;
 void callback(kitti_player::kitti_playerConfig &config, uint32_t level)
 {
 
@@ -78,6 +78,10 @@ void read_pose()
   
   }
   if( !poseFile->good()){
+    if (myConfig.exitIfNotFound)
+    {
+      shoudlExit = true;
+    }
     std::cerr << "Could not read file: " << *poseFile << std::endl;
   }
   else
@@ -222,6 +226,7 @@ void publish_velodyne(ros::Publisher &pub, std::string infile)
 
 int main(int argc, char **argv)
 {
+  shoudlExit = false;
   ros::init(argc, argv, "kitti_player");
 
   ros::NodeHandle n;
@@ -257,7 +262,7 @@ int main(int argc, char **argv)
 
   readTransform.setIdentity();
 
-  while (ros::ok())
+  while (ros::ok() && !shoudlExit)
   {
     if (myConfig.start && (myConfig.continuous || myConfig.publish))
     {
