@@ -1,0 +1,8 @@
+latex/
+html/
+.tags*
+doc
+build/
+bin/
+*.sublime-workspace
+*.pyc
