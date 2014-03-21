@@ -6,7 +6,7 @@
 #include <iostream>
 #include <sstream>
 
-#include "LinearMath/btTransform.h"
+#include "tf/LinearMath/Transform.h"
 #include <tf/transform_broadcaster.h>
 #include <boost/tokenizer.hpp>
 
@@ -16,29 +16,38 @@
 #include "Random.h"
 #include "randomUtil.h"
 #include "bulletUtil.h"
-std::string path;
-std::string sequence_path;
-std::string pose_path;
+
+#include <pcl_conversions/pcl_conversions.h>
+
+using namespace std;
+using namespace pcl;
+using namespace ros;
+using namespace tf;
+
+string path;
+string sequence_path;
+string pose_path;
 kitti_player::kitti_playerConfig myConfig;
 int frame_count = 0;
-std::string sequence;
+string sequence;
 
-btTransform pose;
-std::ifstream* poseFile = NULL;
+tf::Transform pose;
+ifstream* poseFile = NULL;
 
-std::string laser_frame;
-std::string camera_ref_frame;
-std::string gt_camera_ref_frame;
-std::string camera_ref_zero_frame;
-std::string robot_frame;
-std::string gt_robot_frame;
-std::string odom_frame;
+string laser_frame;
+string gt_laser_frame;
+string camera_ref_frame;
+string gt_camera_ref_frame;
+string camera_ref_zero_frame;
+string robot_frame;
+string gt_robot_frame;
+string odom_frame;
 
 tf::Transform readTransform;
 ros::Rate* loop_rate;
 
-btTransform oldPose;
-btTransform last_uncertain_pose;
+tf::Transform oldPose;
+tf::Transform last_uncertain_pose;
 bool shoudlExit;
 void callback(kitti_player::kitti_playerConfig &config, uint32_t level)
 {
@@ -73,8 +82,8 @@ void read_pose()
 {
   if (!poseFile)
   {
-  // std::cout << "new" << pose_path << std::endl;
-    poseFile = new std::ifstream(pose_path.c_str());
+  // cout << "new" << pose_path << endl;
+    poseFile = new ifstream(pose_path.c_str());
   
   }
   if( !poseFile->good()){
@@ -82,29 +91,29 @@ void read_pose()
     {
       shoudlExit = true;
     }
-    std::cerr << "Could not read file: " << *poseFile << std::endl;
+    cerr << "Could not read file: " << *poseFile << endl;
   }
   else
   {
-    std::string line;
+    string line;
     getline(*poseFile, line);
 
-    // std::cout << line << std::endl;
+    // cout << line << endl;
 
-    std::vector<std::string> strs;
+    vector<string> strs;
     boost::split(strs, line, boost::is_any_of("\t "));
-    std::vector<double> values;
+    vector<double> values;
 
-    for ( std::vector<std::string>::iterator it=strs.begin() ; it < strs.end(); it++ )
+    for ( vector<string>::iterator it=strs.begin() ; it < strs.end(); it++ )
     {
       double numb;
-      std::istringstream ( *it ) >> numb;
+      istringstream ( *it ) >> numb;
       values.push_back(numb);
-      // std::cout << numb <<std::endl;
+      // cout << numb <<endl;
     }
 
     readTransform.setOrigin( tf::Vector3(values[3], values[7], values[11]) );
-    readTransform.setBasis( btMatrix3x3(values[0], values[1], values[2],values[4], values[5], values[6],values[8], values[9], values[10]) );
+    readTransform.setBasis( tf::Matrix3x3(values[0], values[1], values[2],values[4], values[5], values[6],values[8], values[9], values[10]) );
   }
 }
 
@@ -115,14 +124,14 @@ void publish_uncertain_pose()
     static tf::TransformBroadcaster br;
     // publish the groundtruth
 
-    btTransform odometryDelta;
+    tf::Transform odometryDelta;
     odometryDelta.mult(oldPose.inverse(),readTransform);
     // odometryDelta.getRotation().normalize();
     if (!odometryDelta.getOrigin().isZero())
     {
       if (myConfig.alphaPose!=0)
       {
-        odometryDelta.getOrigin() += odometryDelta.getOrigin()*btVector3( RandGlobal::getRandomInstance().sampleNormalDistribution(myConfig.alphaPose),
+        odometryDelta.getOrigin() += odometryDelta.getOrigin()*tf::Vector3( RandGlobal::getRandomInstance().sampleNormalDistribution(myConfig.alphaPose),
                                                 RandGlobal::getRandomInstance().sampleNormalDistribution(myConfig.alphaPose),
                                                 RandGlobal::getRandomInstance().sampleNormalDistribution(myConfig.alphaPose));
       }
@@ -172,15 +181,17 @@ void publish_static_transforms()
   tf::Transform transform;
   
   transform.setIdentity();
-  transform.setOrigin(btVector3(0.76,0,1.73));
+  transform.setOrigin(tf::Vector3(0.76,0,1.73));
   br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), robot_frame, laser_frame));
+  br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), gt_robot_frame, gt_laser_frame));
+
 
   transform.setIdentity();
-  transform.setOrigin(btVector3(1.03,0,1.65));
-  btQuaternion rotation;
+  transform.setOrigin(tf::Vector3(1.03,0,1.65));
 
-  btQuaternion rot1;
-  btQuaternion rot2;
+  tf::Quaternion rotation;
+  tf::Quaternion rot1;
+  tf::Quaternion rot2;
 
   rot1.setEuler(M_PI/2,0,0);
   rot2.setEuler(0,-M_PI/2,0);
@@ -196,19 +207,24 @@ void publish_static_transforms()
 /** 
  * \brief Publish the velodyne data
 */
-void publish_velodyne(ros::Publisher &pub, std::string infile)
+void publish_velodyne(ros::Publisher &pub, string infile)
 {
-  std::fstream input(infile.c_str(), std::ios::in | std::ios::binary);
+  fstream input(infile.c_str(), ios::in | ios::binary);
   if(!input.good()){
-    std::cerr << "Could not read file: " << infile << std::endl;
+    cerr << "Could not read file: " << infile << endl;
   }
   else
   {
-    input.seekg(0, std::ios::beg);
+    input.seekg(0, ios::beg);
 
     pcl::PointCloud<pcl::PointXYZI>::Ptr points (new pcl::PointCloud<pcl::PointXYZI>);
-    // points->header.frame_id = robot_frame; // Temp fix for easier interaction
-    points->header.frame_id = laser_frame;
+
+    //workaround for the PCL headers... http://wiki.ros.org/hydro/Migration#PCL
+    sensor_msgs::PointCloud2 pc2;
+    pc2.header.frame_id=laser_frame;
+
+    //old line
+    //points->header.frame_id = laser_frame;
 
     int i;
     for (i=0; input.good() && !input.eof(); i++) {
@@ -218,7 +234,14 @@ void publish_velodyne(ros::Publisher &pub, std::string infile)
       points->push_back(point);
     }
     input.close();
-    points->header.stamp = ros::Time::now();
+
+    //workaround for the "old line" below...
+    pc2.header.stamp=ros::Time::now();
+    points->header = pcl_conversions::toPCL(pc2.header);
+
+    // old line
+    //points->header.stamp = ros::Time::now();
+
     pub.publish(points);
   }
 }
@@ -244,17 +267,19 @@ int main(int argc, char **argv)
 
   ros::Publisher map_pub = n.advertise<pcl::PointCloud<pcl::PointXYZ> > ("/cloud_in", 10, true);
 
-  path = argv[0];
-  std::string::size_type pos = path.find_last_of( "\\/" );
+  path = argv[1];
+
+  string::size_type pos = path.find_last_of( "\\/" );
   path = path.substr( 0, pos);
 
-  n.param<std::string>("camera_ref_frame",camera_ref_frame,"/camera_ref");
-  n.param<std::string>("gt_camera_ref_frame",gt_camera_ref_frame,"/gt_camera_ref");
-  n.param<std::string>("camera_ref_zero_frame",camera_ref_zero_frame,"/camera_ref_zero");
-  n.param<std::string>("laser_frame",laser_frame,"/laser");
-  n.param<std::string>("robot_frame",robot_frame,"/base_link");
-  n.param<std::string>("gt_robot_frame",gt_robot_frame,"/gt_base_link");
-  n.param<std::string>("odom_frame",odom_frame,"/odom");
+  n.param<string>("camera_ref_frame",camera_ref_frame,"/camera_ref");
+  n.param<string>("gt_camera_ref_frame",gt_camera_ref_frame,"/gt_camera_ref");
+  n.param<string>("camera_ref_zero_frame",camera_ref_zero_frame,"/camera_ref_zero");
+  n.param<string>("laser_frame",laser_frame,"/laser_frame");
+  n.param<string>("gt_laser_frame",gt_laser_frame,"/gt_laser_frame");
+  n.param<string>("robot_frame",robot_frame,"/robot_frame");
+  n.param<string>("gt_robot_frame",gt_robot_frame,"/gt_robot_frame");
+  n.param<string>("odom_frame",odom_frame,"/odom");
 
 
   // sequence_path = path+"/../dataset/sequences/01/velodyne/0000000000.bin";
@@ -267,21 +292,22 @@ int main(int argc, char **argv)
     if (myConfig.start && (myConfig.continuous || myConfig.publish))
     {
 
-      std::stringstream ss;
-      ss << std::setfill('0') << std::setw(2) << myConfig.sequence; 
+      stringstream ss;
+      ss << setfill('0') << setw(2) << myConfig.sequence;
      
       ss >> sequence;
-      pose_path = path+"/../dataset/poses/"+sequence+".txt";
-              
+      pose_path = path+"/dataset/poses/"+sequence+".txt";
+
       ss.clear();
       // the number is converted to string with the help of stringstream
-      ss << std::setfill('0') << std::setw(6) << frame_count; 
-      std::string frame;
+      ss << setfill('0') << setw(6) << frame_count;
+      string frame;
       ss >> frame;
-      sequence_path = path+"/../dataset/sequences/"+sequence+"/velodyne/"+frame+".bin";
-      // std::cout << sequence_path << std::endl;
+      sequence_path = path+"/dataset/sequences/"+sequence+"/velodyne/"+frame+".bin";
 
-      // std::cout << pose_path << std::endl;
+      cout << sequence_path << endl;
+      cout << pose_path << endl;
+
       ++frame_count;
       publish_velodyne(map_pub, sequence_path);
       read_pose();
