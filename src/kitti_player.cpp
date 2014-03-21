@@ -219,13 +219,6 @@ void publish_velodyne(ros::Publisher &pub, string infile)
 
     pcl::PointCloud<pcl::PointXYZI>::Ptr points (new pcl::PointCloud<pcl::PointXYZI>);
 
-    //workaround for the PCL headers... http://wiki.ros.org/hydro/Migration#PCL
-    sensor_msgs::PointCloud2 pc2;
-    pc2.header.frame_id=laser_frame;
-
-    //old line
-    //points->header.frame_id = laser_frame;
-
     int i;
     for (i=0; input.good() && !input.eof(); i++) {
       pcl::PointXYZI point;
@@ -235,14 +228,25 @@ void publish_velodyne(ros::Publisher &pub, string infile)
     }
     input.close();
 
-    //workaround for the "old line" below...
-    pc2.header.stamp=ros::Time::now();
-    points->header = pcl_conversions::toPCL(pc2.header);
+    //workaround for the PCL headers... http://wiki.ros.org/hydro/Migration#PCL
+    sensor_msgs::PointCloud2 pc2;
 
-    // old line
-    //points->header.stamp = ros::Time::now();
+    //uncertain frame link
+    if (myConfig.generateUncertain)
+    {
+        pc2.header.frame_id=laser_frame;
+        pc2.header.stamp=ros::Time::now();
+        points->header = pcl_conversions::toPCL(pc2.header);
+        pub.publish(points);    //publish the PCL as
+    }
 
-    pub.publish(points);
+    //ground truth frame link
+    if (myConfig.generateGroundtruth)
+    {
+        pc2.header.frame_id=gt_laser_frame;
+        points->header = pcl_conversions::toPCL(pc2.header);
+        pub.publish(points);
+    }
   }
 }
 

@@ -1,23 +1,23 @@
 #include "bulletUtil.h"
 
-void printBullet(btVector3 vector, const char* msg) {
+void printBullet(tf::Vector3 vector, const char* msg) {
 	std::cout << msg<<": ["  << vector.x() <<"," << vector.y() << "," <<vector.z() << "]"<<std::endl;
 }
 
-void printBullet(btTransform transform, const char* msg) {
+void printBullet(tf::Transform transform, const char* msg) {
 	std::cout << msg << std::endl;
 	printBullet(transform.getOrigin(), "position");
 	printBullet(transform.getBasis().getColumn(0),"orientation");
 }
 
-std::string bulletString(btVector3 vector){
+std::string bulletString(tf::Vector3 vector){
 	std::stringstream ss;
 	ss.str("");
     ss << "["  << vector.x() <<"," << vector.y() << "," <<vector.z() << "]";
 	return ss.str();
 }
 
-std::string bulletString(btTransform transform){
+std::string bulletString(tf::Transform transform){
 	std::stringstream ss;
 	ss.str("");
 	ss << "[" << bulletString(transform.getOrigin()) << ", ";
