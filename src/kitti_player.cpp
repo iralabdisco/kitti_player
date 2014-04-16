@@ -18,6 +18,7 @@
 #include "bulletUtil.h"
 
 #include <pcl_conversions/pcl_conversions.h>
+#include "geometry_msgs/PoseWithCovarianceStamped.h" //for initialpose
 
 using namespace std;
 using namespace pcl;
@@ -29,7 +30,7 @@ string sequence_path;
 string pose_path;
 kitti_player::kitti_playerConfig myConfig;
 int frame_count = 0;
-string sequence;
+
 
 tf::Transform pose;
 ifstream* poseFile = NULL;
@@ -44,30 +45,52 @@ string gt_robot_frame;
 string odom_frame;
 
 tf::Transform readTransform;
-ros::Rate* loop_rate;
+
 
 tf::Transform oldPose;
 tf::Transform last_uncertain_pose;
-bool shoudlExit;
+
+bool exitIfNotFound;
+double alphaOrientation;
+double alphaPose;
+bool continuous;
+bool generateGroundtruth;
+bool generateUncertain;
+bool publish;
+string sequence;
+bool player_start;
+ros::Rate* loop_rate;
+
+#include <boost/lexical_cast.hpp>
+
 void callback(kitti_player::kitti_playerConfig &config, uint32_t level)
 {
 
-  if (config.sequence != myConfig.sequence || config.start == false)
+  if (config.sequence != atoi(sequence.c_str()) || config.start == false)
   {
     oldPose.setIdentity();
     last_uncertain_pose.setIdentity();
     frame_count = 0;
     delete poseFile;
     poseFile = NULL;
-    
+
   }
-  if (config.loop_rate != myConfig.loop_rate)
+  if (config.loop_rate != loop_rate->cycleTime().toSec())
   {
     delete loop_rate;
     loop_rate = new ros::Rate(config.loop_rate);
   }
-    
-  myConfig = config;
+
+//  myConfig = config;
+
+  exitIfNotFound = config.exitIfNotFound;
+  alphaOrientation=config.alphaOrientation;
+  alphaPose=config.alphaPose;
+  continuous=config.continuous;
+  generateGroundtruth=config.generateGroundtruth;
+  generateUncertain=config.generateUncertain;
+  sequence=boost::lexical_cast<string>(config.sequence);
+  player_start=config.start;
 
   if (config.publish)
   {
@@ -87,9 +110,9 @@ void read_pose()
   
   }
   if( !poseFile->good()){
-    if (myConfig.exitIfNotFound)
+    if (exitIfNotFound)
     {
-      shoudlExit = true;
+      exitIfNotFound = true;
     }
     cerr << "Could not read file: " << *poseFile << endl;
   }
@@ -119,7 +142,7 @@ void read_pose()
 
 void publish_uncertain_pose()
 {
-  if (myConfig.generateUncertain)
+  if (generateUncertain)
   {
     static tf::TransformBroadcaster br;
     // publish the groundtruth
@@ -129,19 +152,19 @@ void publish_uncertain_pose()
     // odometryDelta.getRotation().normalize();
     if (!odometryDelta.getOrigin().isZero())
     {
-      if (myConfig.alphaPose!=0)
+      if (alphaPose!=0)
       {
-        odometryDelta.getOrigin() += odometryDelta.getOrigin()*tf::Vector3( RandGlobal::getRandomInstance().sampleNormalDistribution(myConfig.alphaPose),
-                                                RandGlobal::getRandomInstance().sampleNormalDistribution(myConfig.alphaPose),
-                                                RandGlobal::getRandomInstance().sampleNormalDistribution(myConfig.alphaPose));
+        odometryDelta.getOrigin() += odometryDelta.getOrigin()*tf::Vector3( RandGlobal::getRandomInstance().sampleNormalDistribution(alphaPose),
+                                                RandGlobal::getRandomInstance().sampleNormalDistribution(alphaPose),
+                                                RandGlobal::getRandomInstance().sampleNormalDistribution(alphaPose));
       }
-      if (myConfig.alphaOrientation!=0)
+      if (alphaOrientation!=0)
       {
         double roll, pitch, yaw;
         odometryDelta.getBasis().getRPY(roll, pitch, yaw);
-        roll += roll * RandGlobal::getRandomInstance().sampleNormalDistribution(myConfig.alphaOrientation);
-        pitch += pitch * RandGlobal::getRandomInstance().sampleNormalDistribution(myConfig.alphaOrientation);
-        yaw += yaw * RandGlobal::getRandomInstance().sampleNormalDistribution(myConfig.alphaOrientation);
+        roll += roll * RandGlobal::getRandomInstance().sampleNormalDistribution(alphaOrientation);
+        pitch += pitch * RandGlobal::getRandomInstance().sampleNormalDistribution(alphaOrientation);
+        yaw += yaw * RandGlobal::getRandomInstance().sampleNormalDistribution(alphaOrientation);
         odometryDelta.getBasis().setRPY(roll, pitch, yaw);
         // odometryDelta.getRotation().normalize();
       }
@@ -163,7 +186,7 @@ void publish_uncertain_pose()
 */
 void publish_pose_groundtruth()
 {
-  if (myConfig.generateGroundtruth)
+  if (generateGroundtruth)
   {
     static tf::TransformBroadcaster br;
     // publish the groundtruth
@@ -178,8 +201,8 @@ void publish_pose_groundtruth()
 void publish_static_transforms()
 {
   static tf::TransformBroadcaster br;
-  tf::Transform transform;
-  
+  tf::Transform transform,offset;
+
   transform.setIdentity();
   transform.setOrigin(tf::Vector3(0.76,0,1.73));
   br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), robot_frame, laser_frame));
@@ -188,6 +211,10 @@ void publish_static_transforms()
 
   transform.setIdentity();
   transform.setOrigin(tf::Vector3(1.03,0,1.65));
+
+//  offset.setIdentity();
+//  offset.setOrigin( tf::Vector3(10,10,0) );
+//  transform.mult(offset,transform);
 
   tf::Quaternion rotation;
   tf::Quaternion rot1;
@@ -199,6 +226,8 @@ void publish_static_transforms()
   rotation = rot2*rot1;
   
   transform.setRotation(rotation.normalize());
+
+
   br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), odom_frame, camera_ref_zero_frame));
   br.sendTransform(tf::StampedTransform(transform.inverse(), ros::Time::now(), camera_ref_frame, robot_frame));
   br.sendTransform(tf::StampedTransform(transform.inverse(), ros::Time::now(), gt_camera_ref_frame, gt_robot_frame));
@@ -232,7 +261,7 @@ void publish_velodyne(ros::Publisher &pub, string infile)
     sensor_msgs::PointCloud2 pc2;
 
     //uncertain frame link
-    if (myConfig.generateUncertain)
+    if (generateUncertain)
     {
         pc2.header.frame_id=laser_frame;
         pc2.header.stamp=ros::Time::now();
@@ -241,7 +270,7 @@ void publish_velodyne(ros::Publisher &pub, string infile)
     }
 
     //ground truth frame link
-    if (myConfig.generateGroundtruth)
+    if (generateGroundtruth)
     {
         pc2.header.frame_id=gt_laser_frame;
         points->header = pcl_conversions::toPCL(pc2.header);
@@ -251,9 +280,10 @@ void publish_velodyne(ros::Publisher &pub, string infile)
 }
 
 
+
 int main(int argc, char **argv)
 {
-  shoudlExit = false;
+  exitIfNotFound = false;
   ros::init(argc, argv, "kitti_player");
 
   ros::NodeHandle n;
@@ -270,20 +300,25 @@ int main(int argc, char **argv)
 
 
   ros::Publisher map_pub = n.advertise<pcl::PointCloud<pcl::PointXYZ> > ("/cloud_in", 10, true);
+  ros::Publisher initialpose_pub = n.advertise<geometry_msgs::PoseWithCovarianceStamped>("/initialpose", 1);
+
 
   path = argv[1];
 
   string::size_type pos = path.find_last_of( "\\/" );
   path = path.substr( 0, pos);
 
-  n.param<string>("camera_ref_frame",camera_ref_frame,"/camera_ref");
+  n.param<string>("camera_ref_zero_frame",camera_ref_zero_frame,"/camera_ref_zero_frame");
+  n.param<string>("odom_frame",odom_frame,"/odom"); //odom
+
   n.param<string>("gt_camera_ref_frame",gt_camera_ref_frame,"/gt_camera_ref");
-  n.param<string>("camera_ref_zero_frame",camera_ref_zero_frame,"/camera_ref_zero");
-  n.param<string>("laser_frame",laser_frame,"/laser_frame");
-  n.param<string>("gt_laser_frame",gt_laser_frame,"/gt_laser_frame");
-  n.param<string>("robot_frame",robot_frame,"/robot_frame");
-  n.param<string>("gt_robot_frame",gt_robot_frame,"/gt_robot_frame");
-  n.param<string>("odom_frame",odom_frame,"/odom");
+  n.param<string>("gt_laser_frame",gt_laser_frame,"/laser_frame");
+  n.param<string>("gt_robot_frame",gt_robot_frame,"/cart_frame");
+
+  n.param<string>("camera_ref_frame",camera_ref_frame,"/BIASED_camera_ref");
+  n.param<string>("laser_frame",laser_frame,"/BIASED_laser_frame");
+  n.param<string>("robot_frame",robot_frame,"/BIASED_robot_frame");
+
 
 
   // sequence_path = path+"/../dataset/sequences/01/velodyne/0000000000.bin";
@@ -291,13 +326,12 @@ int main(int argc, char **argv)
 
   readTransform.setIdentity();
 
-  while (ros::ok() && !shoudlExit)
+  while (ros::ok() && !exitIfNotFound)
   {
-    if (myConfig.start && (myConfig.continuous || myConfig.publish))
-    {
+
 
       stringstream ss;
-      ss << setfill('0') << setw(2) << myConfig.sequence;
+      ss << setfill('0') << setw(2) << sequence;
      
       ss >> sequence;
       pose_path = path+"/dataset/poses/"+sequence+".txt";
@@ -312,13 +346,16 @@ int main(int argc, char **argv)
       cout << sequence_path << endl;
       cout << pose_path << endl;
 
-      ++frame_count;
       publish_velodyne(map_pub, sequence_path);
+
+    if (player_start && (continuous || publish))
+    {
       read_pose();
-      if (myConfig.publish)
+      if (publish)
       {
-        myConfig.publish = false;
+        publish = false;
       }
+      ++frame_count;
     }
     publish_static_transforms();
     publish_pose_groundtruth();
