@@ -309,6 +309,7 @@ void publish_velodyne(ros::Publisher &pub, string infile)
         if (generateGroundtruth)
         {
             pc2.header.frame_id=gt_laser_frame;
+            pc2.header.stamp=ros::Time::now();
             points->header = pcl_conversions::toPCL(pc2.header);
             pub.publish(points);
         }
@@ -334,10 +335,8 @@ int main(int argc, char **argv)
     f = boost::bind(&callback, _1, _2);
     srv.setCallback(f);
 
-
-    ros::Publisher map_pub = n.advertise<pcl::PointCloud<pcl::PointXYZ> > ("/cloud_in", 10, true);
+    ros::Publisher map_pub = n.advertise<pcl::PointCloud<pcl::PointXYZ> > ("/cloud_in", 1, true);
     ros::Publisher initialpose_pub = n.advertise<geometry_msgs::PoseWithCovarianceStamped>("/initialpose", 1);
-
 
     path = argv[1];
 
@@ -398,19 +397,19 @@ int main(int argc, char **argv)
         // FOR GT-PRINT PURPOSES ** BEGIN **
         if (PRINT_GT_ROBOT_FRAME)
         {
-            static tf::TransformListener listener;
-            tf::StampedTransform stamped_transform;
-            if(listener.waitForTransform (odom_frame,gt_robot_frame,ros::Time(0),ros::Duration(0.1)))
-                listener.lookupTransform(odom_frame,gt_robot_frame,ros::Time(0),stamped_transform);
+//            static tf::TransformListener listener;
+//            tf::StampedTransform stamped_transform;
+//            if(listener.waitForTransform (odom_frame,gt_robot_frame,ros::Time(0),ros::Duration(0.1)))
+//                listener.lookupTransform(odom_frame,gt_robot_frame,ros::Time(0),stamped_transform);
 
-            printf("%s\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t\n",sequence_path.c_str(),
-                   stamped_transform.getOrigin().getX(),
-                   stamped_transform.getOrigin().getY(),
-                   stamped_transform.getOrigin().getZ(),
-                   stamped_transform.getRotation().getW(),
-                   stamped_transform.getRotation().getX(),
-                   stamped_transform.getRotation().getY(),
-                   stamped_transform.getRotation().getZ());
+//            printf("%s\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t\n",sequence_path.c_str(),
+//                   stamped_transform.getOrigin().getX(),
+//                   stamped_transform.getOrigin().getY(),
+//                   stamped_transform.getOrigin().getZ(),
+//                   stamped_transform.getRotation().getW(),
+//                   stamped_transform.getRotation().getX(),
+//                   stamped_transform.getRotation().getY(),
+//                   stamped_transform.getRotation().getZ());
         }
         // FOR GT-PRINT PURPOSES ** END **
 
