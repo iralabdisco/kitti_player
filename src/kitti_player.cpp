@@ -1,3 +1,5 @@
+// redmine usage: This commit refs #388
+
 // ###############################################################################################
 // ###############################################################################################
 // ###############################################################################################
@@ -5,7 +7,7 @@
 /*
  * This node aims to play the kitti data into ROS.
  * This repository is a catkin upgrade from the original work by Francesco Sacchi
- * see http://irawiki.disco.unimib.it/irawiki/index.php/Kitti_Player for the original version.
+ * see http://irawiki.disco.unimib.it/irawiki/index.php/Kitti_Player for the original versionode.
  *
  * Porting to ROS-Hydro and other minor mods: Augusto Luis Ballardini ballardini@disco.unimib.it
  *
@@ -54,6 +56,11 @@
 #include <boost/lexical_cast.hpp>
 #include <string>
 
+#include "cv_bridge/cv_bridge.h"
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/core/core.hpp>
+#include <image_transport/image_transport.h>
+
 using namespace std;
 using namespace pcl;
 using namespace ros;
@@ -71,6 +78,7 @@ struct kitti_player_options
     bool    imu;            // publish IMU sensor_msgs/Imu Message  message
     bool    grayscale;      // publish
     bool    color;          // publish
+    bool    viewer;
 
 };
 
@@ -340,28 +348,22 @@ void publish_velodyne(ros::Publisher &pub, string infile)
 int main(int argc, char **argv)
 {
     kitti_player_options options;
+    po::variables_map vm;
 
-    DIR *dir;
-    struct dirent *ent;
-    std::string frames_dir;
-    std::vector<std::string> images;
-
-
-    // Declare the supported options.
-    po::options_description desc("Allowed options",150);
+    po::options_description desc("Kitti_player, a player for KITTI raw datasets\nDatasets can be downloaded from: http://www.cvlibs.net/datasets/kitti/raw_data.php\n\nAllowed options:",150);
     desc.add_options()
-        ("help"                                                                        , "help message")
-        ("directory,d", po::value<string>()->required()                                , "path to the kitti dataset Directory")
+        ("help,h"                                                                        , "help message")
+        ("directory,d", po::value<string>(&options.path)->required()                                , "path to the kitti dataset Directory")
         ("frequency,f", po::value<float>(&options.frequency)->default_value(1.0)       , "set replay Frequency")
-        ("all      ,a", po::value<bool> (&options.all_data)->default_value(true)       , "replay All data")
-        ("velodyne ,v", po::value<bool> (&options.velodyne)->default_value(false)      , "replay Velodyne data")
-        ("gps      ,g", po::value<bool> (&options.gps)->default_value(false)           , "replay Gps data")
-        ("imu      ,i", po::value<bool> (&options.imu)->default_value(false)           , "replay Imu data")
-        ("grayscale,G", po::value<bool> (&options.grayscale)->default_value(false)     , "replay Stereo Grayscale images")
-        ("color    ,C", po::value<bool> (&options.color)->default_value(false)         , "replay Stereo Color images")
+        ("all      ,a", po::value<bool> (&options.all_data)->implicit_value(1)       , "replay All data")
+        ("velodyne ,v", po::value<bool> (&options.velodyne)->implicit_value(1)      , "replay Velodyne data")
+        ("gps      ,g", po::value<bool> (&options.gps)->implicit_value(1)           , "replay Gps data")
+        ("imu      ,i", po::value<bool> (&options.imu)->implicit_value(1)           , "replay Imu data")
+        ("grayscale,G", po::value<bool> (&options.grayscale)->implicit_value(1)     , "replay Stereo Grayscale images")
+        ("color    ,C", po::value<bool> (&options.color)->implicit_value(1)         , "replay Stereo Color images")
+        ("viewer     ", po::value<bool> (&options.viewer)->implicit_value(1)         , "enable image viewer")
     ;
 
-    po::variables_map vm;
     try
     {
         po::parsed_options parsed = po::command_line_parser(argc, argv).options(desc).allow_unregistered().run();
@@ -370,10 +372,9 @@ int main(int argc, char **argv)
     }
     catch(...)
     {
-        cout << "kitti_player, a player for KITTI raw datasets" << endl;
-        cout << "Datasets can be downloaded from: http://www.cvlibs.net/datasets/kitti/raw_data.php" << endl << endl;
+        cerr << desc << endl;
 
-        cout << "kitti_player needs a directory tree like the following:";
+        cout << "kitti_player needs a directory tree like the following:" << endl;
         cout << "└── 2011_09_26_drive_0001_sync" << endl;
         cout << "    ├── image_00              " << endl;
         cout << "    │   └── data              " << endl;
@@ -388,13 +389,32 @@ int main(int argc, char **argv)
         cout << "    └── velodyne_points       " << endl;
         cout << "        └── data              " << endl << endl;
 
-        cerr << desc << endl;
         return -1;
     }
 
+    ros::init(argc, argv, "kitti_player");
+    ros::NodeHandle node;
+
+    DIR *dir;
+    struct dirent *ent;
+    std::string frames_dir;
+    std::vector<std::string> dataset_entries;
+    unsigned long total_entries = 0; //number of elements to be played
+    unsigned long entries_played  = 0; //number of elements played until now
+    string dir_root             ;
+    string dir_image00          ;string full_filename_image00;
+    string dir_image01          ;string full_filename_image01;
+    string dir_image02          ;string full_filename_image02;
+    string dir_image03          ;string full_filename_image03;
+    string dir_oxts             ;
+    string dir_velodyne_points  ;
+    cv::Mat image00,image01,image02,image03;
+    std::string encoding;
+    ros::Rate loop_rate(options.frequency);
+
+
     if (vm.count("help")) {
-        cout << "Kitti_player, a player for KITTI raw datasets" << endl;
-        cout << "Datasets can be downloaded from: http://www.cvlibs.net/datasets/kitti/raw_data.php" << endl << endl;
+        cout << desc << endl;
 
         cout << "kitti_player needs a directory tree like the following:";
         cout << "└── 2011_09_26_drive_0001_sync" << endl;
@@ -411,41 +431,193 @@ int main(int argc, char **argv)
         cout << "    └── velodyne_points       " << endl;
         cout << "        └── data              " << endl << endl;
 
-        cout << desc << endl;
         return 1;
     }
 
-    if ((dir = opendir(vm["directory"].as<string>().c_str())) != NULL)
+    if (!(options.all_data || options.color || options.gps || options.grayscale || options.imu || options.velodyne))
     {
-        while((ent = readdir(dir)) != NULL)
-        {
-            std::string filename(ent->d_name);
-            if(filename.rfind(".png") != std::string::npos)
-                images.push_back(frames_dir + filename);
-        }
+        ROS_WARN_STREAM("Job finished without playing the dataset. No parameters provided");
+        return 0;
+    }
+
+    dir_root             = options.path;
+    dir_image00          = options.path;
+    dir_image01          = options.path;
+    dir_image02          = options.path;
+    dir_image03          = options.path;
+    dir_oxts             = options.path;
+    dir_velodyne_points  = options.path;
+    (*(options.path.end()-1) != '/' ? dir_root            = options.path+"/"                :       dir_root=options.path);
+    (*(options.path.end()-1) != '/' ? dir_image00         = options.path+"/image_00/data/"  :       dir_image00=options.path+"image_00/data/");
+    (*(options.path.end()-1) != '/' ? dir_image01         = options.path+"/image_01/data/"  :       dir_image01=options.path+"image_01/data/");
+    (*(options.path.end()-1) != '/' ? dir_image02         = options.path+"/image_02/data/"  :       dir_image02=options.path+"image_02/data/");
+    (*(options.path.end()-1) != '/' ? dir_image03         = options.path+"/image_03/data/"  :       dir_image03=options.path+"image_03/data/");
+    (*(options.path.end()-1) != '/' ? dir_oxts            = options.path+"/oxts/data/"      :       dir_oxts=options.path+"oxts/data/");
+    (*(options.path.end()-1) != '/' ? dir_velodyne_points = options.path+"/velodyne_points/data/" : dir_velodyne_points=options.path+"velodyne_points/data/");
+
+    // Check all the directories
+    if (
+            (options.all_data   && (   (opendir(dir_image00.c_str())            == NULL) ||
+                                       (opendir(dir_image01.c_str())            == NULL) ||
+                                       (opendir(dir_image02.c_str())            == NULL) ||
+                                       (opendir(dir_image03.c_str())            == NULL) ||
+                                       (opendir(dir_oxts.c_str())               == NULL) ||
+                                       (opendir(dir_velodyne_points.c_str())    == NULL)))
+            ||
+            (options.color      && (   (opendir(dir_image02.c_str())            == NULL) ||
+                                       (opendir(dir_image03.c_str())            == NULL)))
+            ||
+            (options.grayscale  && (   (opendir(dir_image00.c_str())            == NULL) ||
+                                       (opendir(dir_image01.c_str())            == NULL)))
+            ||
+            (options.imu        && (   (opendir(dir_oxts.c_str())               == NULL)))
+            ||
+            (options.gps        && (   (opendir(dir_oxts.c_str())               == NULL)))
+            ||
+            (options.velodyne   && (   (opendir(dir_velodyne_points.c_str())    == NULL)))
+
+        )
+    {
+        ROS_ERROR("Incorrect tree directory , use --help for details");
+        return -1;
+    }
+    else
+    {
+        ROS_INFO_STREAM ("Checking directories...");
+        ROS_INFO_STREAM (options.path << "\t[OK]");
+    }
+
+    // publish color images
+
+
+    //count elements in the folder
+    if (options.all_data)
+    {
+        dir = opendir(dir_image02.c_str());
+        while(ent = readdir(dir))  ++total_entries;
         closedir (dir);
-
-        if(images.size() == 0){
-            ROS_ERROR("Incorrect directory tree, use --help for details");
-            return -1;
-        }
-    } else
+    }
+    else
     {
-        ROS_ERROR("Couldn't open the directory\t<%s>", vm["directory"].as<string>().c_str());
-        return 1;
+        bool done=false;
+        if (!done && options.color)
+        {
+            total_entries=0;
+            dir = opendir(dir_image02.c_str());
+            while(ent = readdir(dir))  ++total_entries;
+            closedir (dir);
+            done=true;
+        }
+        if (!done && options.grayscale)
+        {
+            total_entries=0;
+            dir = opendir(dir_image00.c_str());
+            while(ent = readdir(dir))  ++total_entries;
+            closedir (dir);
+            done=true;
+        }
+        if (!done && options.gps)
+        {
+            total_entries=0;
+            dir = opendir(dir_oxts.c_str());
+            while(ent = readdir(dir))  ++total_entries;
+            closedir (dir);
+            done=true;
+        }
+        if (!done && options.imu)
+        {
+            total_entries=0;
+            dir = opendir(dir_oxts.c_str());
+            while(ent = readdir(dir))  ++total_entries;
+            closedir (dir);
+            done=true;
+        }
+        if (!done && options.velodyne)
+        {
+            total_entries=0;
+            dir = opendir(dir_oxts.c_str());
+            while(ent = readdir(dir))  ++total_entries;
+            closedir (dir);
+            done=true;
+        }
     }
 
+    if(options.viewer)
+    {
+        ROS_INFO_STREAM("Opening CV viewer(s)");
+        if(options.color || options.all_data)
+        {
+            //TODO: FIX FIX VENGONO APERTE SEMPRE DUE FINESTRE. ...
+            cv::namedWindow("CameraSimulator Color Viewer",CV_WINDOW_AUTOSIZE);
+        }
+        if(options.grayscale|| options.all_data)
+        {
+            cv::namedWindow("CameraSimulator Greyscale Viewer",CV_WINDOW_AUTOSIZE);
+        }
+        ROS_INFO_STREAM("Opening CV viewer(s)... OK");
+    }
+
+    image_transport::ImageTransport it(node);
+    image_transport::CameraPublisher pub00 = it.advertiseCamera("image00", 1);
+    image_transport::CameraPublisher pub01 = it.advertiseCamera("image01", 1);
+    image_transport::CameraPublisher pub02 = it.advertiseCamera("image02", 1);
+    image_transport::CameraPublisher pub03 = it.advertiseCamera("image03", 1);
+
+    do
+    {
+        if(options.color )
+        {
+
+            cout << "AAA" << endl << options.color  << endl << options.all_data << endl;
+            full_filename_image02 = dir_image02 + boost::str(boost::format("%010d") % entries_played ) + ".png";
+            full_filename_image03 = dir_image03 + boost::str(boost::format("%010d") % entries_played ) + ".png";
+            ROS_DEBUG_STREAM ( full_filename_image02 << endl << full_filename_image03 << endl << endl);
+            image02 = cv::imread(full_filename_image02, CV_LOAD_IMAGE_UNCHANGED);
+            image03 = cv::imread(full_filename_image03, CV_LOAD_IMAGE_UNCHANGED);
+            if ( (image02.data == NULL) || (image03.data == NULL) ){
+                ROS_ERROR("Error reading color images (02 & 03)");
+                node.shutdown();
+                return -1;
+            }
+
+            if(options.viewer)
+            {
+                cv::imshow("CameraSimulator Color Viewer",image02);
+                cv::waitKey(5); //5 milliseconds
+            }
+        }
+
+        if(options.grayscale )
+        {
+            cout << "BBB" << endl << options.grayscale  << endl << options.all_data << endl;
+            full_filename_image00 = dir_image00 + boost::str(boost::format("%010d") % entries_played ) + ".png";
+            full_filename_image01 = dir_image01 + boost::str(boost::format("%010d") % entries_played ) + ".png";
+            ROS_DEBUG_STREAM ( full_filename_image00 << endl << full_filename_image01 << endl << endl);
+            image00 = cv::imread(full_filename_image00, CV_LOAD_IMAGE_UNCHANGED);
+            image01 = cv::imread(full_filename_image01, CV_LOAD_IMAGE_UNCHANGED);
+            if ( (image00.data == NULL) || (image01.data == NULL) ){
+                ROS_ERROR("Error reading color images (00 & 01)");
+                node.shutdown();
+                return -1;
+            }
+
+            if(options.viewer)
+            {
+                cv::imshow("CameraSimulator Greyscale Viewer",image00);
+                cv::waitKey(5); //5 milliseconds
+            }
+        }
 
 
 
+        entries_played++;
+        loop_rate.sleep();
+    }while(entries_played<total_entries && ros::ok());
 
     return -1;
 
     exitIfNotFound = false;
-    ros::init(argc, argv, "kitti_player");
 
-    ros::NodeHandle n;
-    loop_rate = new ros::Rate(1);
     Random random;
     RandGlobal::setRandomInstance(random);
     last_uncertain_pose.setIdentity();
@@ -456,24 +628,24 @@ int main(int argc, char **argv)
     f = boost::bind(&callback, _1, _2);
     srv.setCallback(f);
 
-    ros::Publisher map_pub = n.advertise<pcl::PointCloud<pcl::PointXYZ> > ("/cloud_in", 1, true);
-    ros::Publisher initialpose_pub = n.advertise<geometry_msgs::PoseWithCovarianceStamped>("/initialpose", 1);
+    ros::Publisher map_pub = node.advertise<pcl::PointCloud<pcl::PointXYZ> > ("/cloud_in", 1, true);
+    ros::Publisher initialpose_pub = node.advertise<geometry_msgs::PoseWithCovarianceStamped>("/initialpose", 1);
 
     path = argv[1];
 
     string::size_type pos = path.find_last_of( "\\/" );
     path = path.substr( 0, pos);
 
-    n.param<string>("camera_ref_zero_frame",camera_ref_zero_frame,"/camera_ref_zero_frame");
-    n.param<string>("odom_frame",odom_frame,"/odom"); //odom
+    node.param<string>("camera_ref_zero_frame",camera_ref_zero_frame,"/camera_ref_zero_frame");
+    node.param<string>("odom_frame",odom_frame,"/odom"); //odom
 
-    n.param<string>("gt_camera_ref_frame",gt_camera_ref_frame,"/gt_camera_ref");
-    n.param<string>("gt_laser_frame",gt_laser_frame,"/laser_frame");
-    n.param<string>("gt_robot_frame",gt_robot_frame,"/cart_frame");
+    node.param<string>("gt_camera_ref_frame",gt_camera_ref_frame,"/gt_camera_ref");
+    node.param<string>("gt_laser_frame",gt_laser_frame,"/laser_frame");
+    node.param<string>("gt_robot_frame",gt_robot_frame,"/cart_frame");
 
-    n.param<string>("camera_ref_frame",camera_ref_frame,"/BIASED_camera_ref");
-    n.param<string>("laser_frame",laser_frame,"/BIASED_laser_frame");
-    n.param<string>("robot_frame",robot_frame,"/BIASED_robot_frame");
+    node.param<string>("camera_ref_frame",camera_ref_frame,"/BIASED_camera_ref");
+    node.param<string>("laser_frame",laser_frame,"/BIASED_laser_frame");
+    node.param<string>("robot_frame",robot_frame,"/BIASED_robot_frame");
 
     readTransform.setIdentity();
 
@@ -538,7 +710,7 @@ int main(int argc, char **argv)
 
         ros::spinOnce();
 
-        loop_rate->sleep();
+
     }
 
 

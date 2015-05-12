@@ -4,7 +4,18 @@ project(kitti_player)
 SET (CMAKE_BUILD_TYPE Debug)
 SET (CMAKE_CXX_FLAGS "-O0")
 
-find_package(catkin REQUIRED COMPONENTS roscpp tf tf2 std_msgs dynamic_reconfigure pcl_ros geometry_msgs)
+find_package(catkin REQUIRED COMPONENTS
+                    roscpp
+                    tf
+                    tf2
+                    std_msgs
+                    dynamic_reconfigure
+                    pcl_ros
+                    geometry_msgs
+                    cv_bridge
+                    image_transport
+)
+
 find_package(PCL 1.7 REQUIRED)
 
 generate_dynamic_reconfigure_options(cfg/kitti_player.cfg)
