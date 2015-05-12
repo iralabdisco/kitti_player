@@ -50,10 +50,30 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include "geometry_msgs/PoseWithCovarianceStamped.h" //for initialpose
 
+#include <boost/program_options.hpp>
+#include <boost/lexical_cast.hpp>
+#include <string>
+
 using namespace std;
 using namespace pcl;
 using namespace ros;
 using namespace tf;
+
+namespace po = boost::program_options;
+
+struct kitti_player_options
+{
+    string  path;
+    float   frequency;      // publisher frequency. 1 > Kitti default 10Hz
+    bool    all_data;       // publish everything
+    bool    velodyne;       // publish velodyne point clouds /as PCL
+    bool    gps;            // publish GPS sensor_msgs/NavSatFix    message
+    bool    imu;            // publish IMU sensor_msgs/Imu Message  message
+    bool    grayscale;      // publish
+    bool    color;          // publish
+
+};
+
 
 string path;
 string sequence_path;
@@ -75,22 +95,20 @@ string odom_frame;
 
 tf::Transform readTransform;
 
-
 tf::Transform oldPose;
 tf::Transform last_uncertain_pose;
 
-bool exitIfNotFound;
-double alphaOrientation;
-double alphaPose;
-bool continuous;
-bool generateGroundtruth;
-bool generateUncertain;
-bool publish;
-string sequence;
-bool player_start;
+bool    exitIfNotFound;
+double  alphaOrientation;
+double  alphaPose;
+bool    continuous;
+bool    generateGroundtruth;
+bool    generateUncertain;
+bool    publish;
+string  sequence;
+bool    player_start;
 ros::Rate* loop_rate;
 
-#include <boost/lexical_cast.hpp>
 
 void callback(kitti_player::kitti_playerConfig &config, uint32_t level)
 {
@@ -110,16 +128,14 @@ void callback(kitti_player::kitti_playerConfig &config, uint32_t level)
         loop_rate = new ros::Rate(config.loop_rate);
     }
 
-    //  myConfig = config; //debuggin?
-
-    exitIfNotFound = config.exitIfNotFound;
-    alphaOrientation=config.alphaOrientation;
-    alphaPose=config.alphaPose;
-    continuous=config.continuous;
-    generateGroundtruth=config.generateGroundtruth;
-    generateUncertain=config.generateUncertain;
-    sequence=boost::lexical_cast<string>(config.sequence);
-    player_start=config.start;
+    exitIfNotFound      = config.exitIfNotFound;
+    alphaOrientation    = config.alphaOrientation;
+    alphaPose           = config.alphaPose;
+    continuous          = config.continuous;
+    generateGroundtruth = config.generateGroundtruth;
+    generateUncertain   = config.generateUncertain;
+    sequence            = boost::lexical_cast<string>(config.sequence);
+    player_start        = config.start;
 
     if (config.publish)
     {
@@ -323,6 +339,108 @@ void publish_velodyne(ros::Publisher &pub, string infile)
 
 int main(int argc, char **argv)
 {
+    kitti_player_options options;
+
+    DIR *dir;
+    struct dirent *ent;
+    std::string frames_dir;
+    std::vector<std::string> images;
+
+
+    // Declare the supported options.
+    po::options_description desc("Allowed options",150);
+    desc.add_options()
+        ("help"                                                                        , "help message")
+        ("directory,d", po::value<string>()->required()                                , "path to the kitti dataset Directory")
+        ("frequency,f", po::value<float>(&options.frequency)->default_value(1.0)       , "set replay Frequency")
+        ("all      ,a", po::value<bool> (&options.all_data)->default_value(true)       , "replay All data")
+        ("velodyne ,v", po::value<bool> (&options.velodyne)->default_value(false)      , "replay Velodyne data")
+        ("gps      ,g", po::value<bool> (&options.gps)->default_value(false)           , "replay Gps data")
+        ("imu      ,i", po::value<bool> (&options.imu)->default_value(false)           , "replay Imu data")
+        ("grayscale,G", po::value<bool> (&options.grayscale)->default_value(false)     , "replay Stereo Grayscale images")
+        ("color    ,C", po::value<bool> (&options.color)->default_value(false)         , "replay Stereo Color images")
+    ;
+
+    po::variables_map vm;
+    try
+    {
+        po::parsed_options parsed = po::command_line_parser(argc, argv).options(desc).allow_unregistered().run();
+        po::store(parsed, vm);
+        po::notify(vm);
+    }
+    catch(...)
+    {
+        cout << "kitti_player, a player for KITTI raw datasets" << endl;
+        cout << "Datasets can be downloaded from: http://www.cvlibs.net/datasets/kitti/raw_data.php" << endl << endl;
+
+        cout << "kitti_player needs a directory tree like the following:";
+        cout << "└── 2011_09_26_drive_0001_sync" << endl;
+        cout << "    ├── image_00              " << endl;
+        cout << "    │   └── data              " << endl;
+        cout << "    ├── image_01              " << endl;
+        cout << "    │   └── data              " << endl;
+        cout << "    ├── image_02              " << endl;
+        cout << "    │   └── data              " << endl;
+        cout << "    ├── image_03              " << endl;
+        cout << "    │   └── data              " << endl;
+        cout << "    ├── oxts                  " << endl;
+        cout << "    │   └── data              " << endl;
+        cout << "    └── velodyne_points       " << endl;
+        cout << "        └── data              " << endl << endl;
+
+        cerr << desc << endl;
+        return -1;
+    }
+
+    if (vm.count("help")) {
+        cout << "Kitti_player, a player for KITTI raw datasets" << endl;
+        cout << "Datasets can be downloaded from: http://www.cvlibs.net/datasets/kitti/raw_data.php" << endl << endl;
+
+        cout << "kitti_player needs a directory tree like the following:";
+        cout << "└── 2011_09_26_drive_0001_sync" << endl;
+        cout << "    ├── image_00              " << endl;
+        cout << "    │   └── data              " << endl;
+        cout << "    ├── image_01              " << endl;
+        cout << "    │   └── data              " << endl;
+        cout << "    ├── image_02              " << endl;
+        cout << "    │   └── data              " << endl;
+        cout << "    ├── image_03              " << endl;
+        cout << "    │   └── data              " << endl;
+        cout << "    ├── oxts                  " << endl;
+        cout << "    │   └── data              " << endl;
+        cout << "    └── velodyne_points       " << endl;
+        cout << "        └── data              " << endl << endl;
+
+        cout << desc << endl;
+        return 1;
+    }
+
+    if ((dir = opendir(vm["directory"].as<string>().c_str())) != NULL)
+    {
+        while((ent = readdir(dir)) != NULL)
+        {
+            std::string filename(ent->d_name);
+            if(filename.rfind(".png") != std::string::npos)
+                images.push_back(frames_dir + filename);
+        }
+        closedir (dir);
+
+        if(images.size() == 0){
+            ROS_ERROR("Incorrect directory tree, use --help for details");
+            return -1;
+        }
+    } else
+    {
+        ROS_ERROR("Couldn't open the directory\t<%s>", vm["directory"].as<string>().c_str());
+        return 1;
+    }
+
+
+
+
+
+    return -1;
+
     exitIfNotFound = false;
     ros::init(argc, argv, "kitti_player");
 
@@ -357,15 +475,10 @@ int main(int argc, char **argv)
     n.param<string>("laser_frame",laser_frame,"/BIASED_laser_frame");
     n.param<string>("robot_frame",robot_frame,"/BIASED_robot_frame");
 
-    // sequence_path = path+"/../dataset/sequences/01/velodyne/0000000000.bin";
-    // pose_path = path+"/../dataset/poses/01.txt";
-
     readTransform.setIdentity();
 
     while (ros::ok() && !exitIfNotFound)
     {
-
-
         stringstream ss;
         ss << setfill('0') << setw(2) << sequence;
 
@@ -377,7 +490,6 @@ int main(int argc, char **argv)
         ss << setfill('0') << setw(10) << frame_count;
         string frame;
         ss >> frame;
-//        sequence_path = path+"/dataset/sequences/"+sequence+"/velodyne/"+frame+".bin";
         sequence_path = path+"/dataset/2011_09_26/2011_09_26_drive_0001_sync/velodyne_points/data/"+frame+".bin";
 
         #if defined (PRINT_CURRENT_INPUT)
