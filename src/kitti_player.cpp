@@ -15,10 +15,10 @@
 
 // COMPILE-TIME CONFIGURATIONS //
 
-#define PRINT_GT_ROBOT_FRAME 0  // if activated, you'll see the current tranform+rotation of the
-                                // gt_robot_frame w.r.t. odom_frame
+//#define PRINT_GT_ROBOT_FRAME 0  // if activated, you'll see the current tranform+rotation of the
+// gt_robot_frame w.r.t. odom_frame
 
-#define PRINT_CURRENT_INPUT 1   // if activated, put on screen the current file readed
+//#define PRINT_CURRENT_INPUT 1   // if activated, put on screen the current file readed
 
 // COMPILE-TIME CONFIGURATIONS //
 
@@ -138,7 +138,9 @@ void read_pose()
         poseFile = new ifstream(pose_path.c_str());
 
     }
-    if( !poseFile->good()){
+
+    if( !poseFile->good())
+    {
         if (exitIfNotFound)
         {
             exitIfNotFound = true;
@@ -150,7 +152,7 @@ void read_pose()
         string line;
         getline(*poseFile, line);
 
-        // cout << line << endl;
+        cout << line << " " << *poseFile << endl;
 
         vector<string> strs;
         boost::split(strs, line, boost::is_any_of("\t "));
@@ -280,6 +282,7 @@ void publish_velodyne(ros::Publisher &pub, string infile)
     }
     else
     {
+        cout << infile << endl;
         input.seekg(0, ios::beg);
 
         pcl::PointCloud<pcl::PointXYZI>::Ptr points (new pcl::PointCloud<pcl::PointXYZI>);
@@ -371,16 +374,18 @@ int main(int argc, char **argv)
 
         ss.clear();
         // the number is converted to string with the help of stringstream
-        ss << setfill('0') << setw(6) << frame_count;
+        ss << setfill('0') << setw(10) << frame_count;
         string frame;
         ss >> frame;
-        sequence_path = path+"/dataset/sequences/"+sequence+"/velodyne/"+frame+".bin";
+//        sequence_path = path+"/dataset/sequences/"+sequence+"/velodyne/"+frame+".bin";
+        sequence_path = path+"/dataset/2011_09_26/2011_09_26_drive_0001_sync/velodyne_points/data/"+frame+".bin";
 
-        if (PRINT_CURRENT_INPUT)
+        #if defined (PRINT_CURRENT_INPUT)
         {
             cout << sequence_path << endl;
             cout << pose_path << endl;
         }
+        #endif
 
         publish_velodyne(map_pub, sequence_path);
 
@@ -395,22 +400,23 @@ int main(int argc, char **argv)
         }
 
         // FOR GT-PRINT PURPOSES ** BEGIN **
-        if (PRINT_GT_ROBOT_FRAME)
+        #if defined (PRINT_GT_ROBOT_FRAME)
         {
-//            static tf::TransformListener listener;
-//            tf::StampedTransform stamped_transform;
-//            if(listener.waitForTransform (odom_frame,gt_robot_frame,ros::Time(0),ros::Duration(0.1)))
-//                listener.lookupTransform(odom_frame,gt_robot_frame,ros::Time(0),stamped_transform);
+            static tf::TransformListener listener;
+            tf::StampedTransform stamped_transform;
+            if(listener.waitForTransform (odom_frame,gt_robot_frame,ros::Time(0),ros::Duration(0.1)))
+                listener.lookupTransform(odom_frame,gt_robot_frame,ros::Time(0),stamped_transform);
 
-//            printf("%s\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t\n",sequence_path.c_str(),
-//                   stamped_transform.getOrigin().getX(),
-//                   stamped_transform.getOrigin().getY(),
-//                   stamped_transform.getOrigin().getZ(),
-//                   stamped_transform.getRotation().getW(),
-//                   stamped_transform.getRotation().getX(),
-//                   stamped_transform.getRotation().getY(),
-//                   stamped_transform.getRotation().getZ());
+            printf("%s\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t\n",sequence_path.c_str(),
+                   stamped_transform.getOrigin().getX(),
+                   stamped_transform.getOrigin().getY(),
+                   stamped_transform.getOrigin().getZ(),
+                   stamped_transform.getRotation().getW(),
+                   stamped_transform.getRotation().getX(),
+                   stamped_transform.getRotation().getY(),
+                   stamped_transform.getRotation().getZ());
         }
+        #endif
         // FOR GT-PRINT PURPOSES ** END **
 
 
