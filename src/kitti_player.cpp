@@ -64,6 +64,7 @@
 #include <opencv2/core/core.hpp>
 #include <image_transport/image_transport.h>
 #include <boost/tokenizer.hpp>
+#include <boost/progress.hpp>
 
 using namespace std;
 using namespace pcl;
@@ -731,7 +732,7 @@ int main(int argc, char **argv)
         if(options.grayscale|| options.all_data)
         {
             ROS_DEBUG_STREAM("grayscale||all " << options.grayscale << " " << options.all_data);
-            cv::namedWindow("CameraSimulator Greyscale Viewer",CV_WINDOW_AUTOSIZE);
+            cv::namedWindow("CameraSimulator Grayscale Viewer",CV_WINDOW_AUTOSIZE);
             full_filename_image00 = dir_image00 + boost::str(boost::format("%010d") % 0 ) + ".png";
             cv_image00 = cv::imread(full_filename_image00, CV_LOAD_IMAGE_UNCHANGED);
             cv::waitKey(5);
@@ -805,6 +806,7 @@ int main(int argc, char **argv)
         ros_cameraInfoMsg_camera01.width  = ros_cameraInfoMsg_camera00.width  = cv_image00.cols;
     }
 
+    boost::progress_display progress(total_entries) ;
 
     do
     {
@@ -867,7 +869,7 @@ int main(int argc, char **argv)
             if(options.viewer)
             {
                 //display the left image only
-                cv::imshow("CameraSimulator Greyscale Viewer",cv_image00);
+                cv::imshow("CameraSimulator Grayscale Viewer",cv_image00);
                 //give some time to draw images
                 cv::waitKey(5);
             }
@@ -894,20 +896,21 @@ int main(int argc, char **argv)
 //        }
 
 
-
+        ++progress;
         entries_played++;
         loop_rate.sleep();
     }while(entries_played<=total_entries-1 && ros::ok());
 
 
-
-
-
-
-
-    // TODO
-//    if(viewer)
-//        cv::destroyWindow("CameraSimulator Viewer");
+    if(options.viewer)
+    {
+        ROS_INFO_STREAM(" Closing CV viewer(s)");
+        if(options.color || options.all_data)
+            cv::destroyWindow("CameraSimulator Color Viewer");
+        if(options.grayscale || options.all_data)
+            cv::destroyWindow("CameraSimulator Grayscale Viewer");
+        ROS_INFO_STREAM(" Closing CV viewer(s)... OK");
+    }
 
 
     ROS_INFO_STREAM("Done!");
