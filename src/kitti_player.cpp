@@ -364,10 +364,16 @@ int getCalibration(string dir_root, string camera_name, double* K,std::vector<do
  *     - P_rect_xx: 3x4 projection matrix after rectification
 */
 
+    //    double K[9];         // Calibration Matrix
+    //    double D[5];         // Distortion Coefficients
+    //    double R[9];         // Rectification Matrix
+    //    double P[12];        // Projection Matrix Rectified (u,v,w) = P * R * (x,y,z,q)
+
 
     string calib_cam_to_cam=dir_root+"calib_cam_to_cam.txt";
     ifstream file_c2c(calib_cam_to_cam.c_str());
-    if (!file_c2c.is_open()) return 1;
+    if (!file_c2c.is_open())
+        return false;
 
     ROS_INFO_STREAM("Reading camera" << camera_name << " calibration from " << calib_cam_to_cam);
 
@@ -375,60 +381,68 @@ int getCalibration(string dir_root, string camera_name, double* K,std::vector<do
     boost::char_separator<char> sep{" "};
 
     vector< string > vec;
-    string line;
+    string line="";
+    char index=0;
+    tokenizer::iterator token_iterator;
 
     while (getline(file_c2c,line))
     {
+        // Parse string phase 1, tokenize it using Boost.
         tokenizer tok(line,sep);
 
-//        for (const auto &t : tok)
-//            std::cout << t << '\n';
+        // Move the iterator at the beginning of the tokenize vector and check for K/D/R/P matrices.
 
-        tokenizer::iterator token_iterator(tok.begin());
-
+        token_iterator=tok.begin();
         if (strcmp((*token_iterator).c_str(),((string)(string("K_")+camera_name+string(":"))).c_str())==0) //Calibration Matrix
         {
-            cout << "K_00" << endl;
+            index=0; //should be 9 at the end
+            ROS_DEBUG_STREAM("K_" << camera_name);
+            for (token_iterator++; token_iterator != tok.end(); token_iterator++)
+            {
+//                std::cout << *token_iterator << '\n';
+                K[index++]=boost::lexical_cast<double>(*token_iterator);
+            }
         }
+
+        token_iterator=tok.begin();
         if (strcmp((*token_iterator).c_str(),((string)(string("D_")+camera_name+string(":"))).c_str())==0) //Distortion Coefficients
         {
-            cout << "D_00" << endl;
+            index=0; //should be 5 at the end
+            ROS_DEBUG_STREAM("D_" << camera_name);
+            for (token_iterator++; token_iterator != tok.end(); token_iterator++)
+            {
+//                std::cout << *token_iterator << '\n';
+                D[index++]=boost::lexical_cast<double>(*token_iterator);
+            }
         }
+
+        token_iterator=tok.begin();
         if (strcmp((*token_iterator).c_str(),((string)(string("R_")+camera_name+string(":"))).c_str())==0) //Rectification Matrix
         {
-            cout << "R_00" << endl;
+            index=0; //should be 12 at the end
+            ROS_DEBUG_STREAM("R_" << camera_name);
+            for (token_iterator++; token_iterator != tok.end(); token_iterator++)
+            {
+//                std::cout << *token_iterator << '\n';
+                R[index++]=boost::lexical_cast<double>(*token_iterator);
+            }
         }
+
+        token_iterator=tok.begin();
         if (strcmp((*token_iterator).c_str(),((string)(string("P_rect_")+camera_name+string(":"))).c_str())==0) //Projection Matrix Rectified
         {
-            cout << "P_rect_00" << endl;
+            index=0; //should be 12 at the end
+            ROS_DEBUG_STREAM("P_rect_" << camera_name);
+            for (token_iterator++; token_iterator != tok.end(); token_iterator++)
+            {
+//                std::cout << *token_iterator << '\n';
+                P[index++]=boost::lexical_cast<double>(*token_iterator);
+            }
         }
 
     }
 
-//    double K[9];         // Calibration Matrix
-//    double D[5];         // Distortion Coefficients
-//    double R[9];         // Rectification Matrix
-//    double P[12];        // Projection Matrix Rectified (u,v,w) = P * R * (x,y,z,q)
-
-    for(int i=0;i<9;i++)
-        K[i] = 0;
-    K[8] = 1;
-
-//    K[0] = config["K"]["fx"].as<double>();
-//    K[4] = config["K"]["fy"].as<double>();
-//    K[2] = config["K"]["cx"].as<double>();
-//    K[5] = config["K"]["cy"].as<double>();
-
-//    for(int i=0;i<5;i++)
-//        this->D[i] = config["D"][i].as<double>();
-
-//    for(int i=0;i<12;i++){
-//        this->P[i] = config["P"][i].as<double>();
-//    }
-
-//    for(int i=0;i<9;i++)
-//        this->R[i] = config["R"][i].as<double>();
-
+    return true;
 }
 
 int main(int argc, char **argv)
@@ -523,7 +537,12 @@ int main(int argc, char **argv)
     sensor_msgs::Image ros_msg02;
     sensor_msgs::Image ros_msg03;
 
-    sensor_msgs::CameraInfo ros_cameraInfoMsg;
+//    sensor_msgs::CameraInfo ros_cameraInfoMsg;
+    sensor_msgs::CameraInfo ros_cameraInfoMsg_camera00;
+    sensor_msgs::CameraInfo ros_cameraInfoMsg_camera01;
+    sensor_msgs::CameraInfo ros_cameraInfoMsg_camera02;
+    sensor_msgs::CameraInfo ros_cameraInfoMsg_camera03;
+
     cv_bridge::CvImage cv_bridge_img;
 
 
@@ -550,7 +569,7 @@ int main(int argc, char **argv)
 
     if (!(options.all_data || options.color || options.gps || options.grayscale || options.imu || options.velodyne))
     {
-        ROS_WARN_STREAM("Job finished without playing the dataset. No parameters provided");
+        ROS_WARN_STREAM("Job finished without playing the dataset. No 'publishing' parameters provided");
         return 0;
     }
 
@@ -721,31 +740,69 @@ int main(int argc, char **argv)
     }
 
     // CAMERA INFO SECTION: read one for all
-    ros_cameraInfoMsg.header.seq = 0;
-    ros_cameraInfoMsg.header.stamp = ros::Time::now();
-    ros_cameraInfoMsg.header.frame_id = ros::this_node::getName();
-    ros_cameraInfoMsg.height = 0;
-    ros_cameraInfoMsg.width  = 0;
-    ros_cameraInfoMsg.D.resize(5);
-    if (getCalibration(dir_root,"01",ros_cameraInfoMsg.K.data(),ros_cameraInfoMsg.D,ros_cameraInfoMsg.R.data(),ros_cameraInfoMsg.P.data()))
-        return -1;
-return 0;
 
-    if(options.color)
+    ros_cameraInfoMsg_camera00.header.seq = 0;
+    ros_cameraInfoMsg_camera00.header.stamp = ros::Time::now();
+    ros_cameraInfoMsg_camera00.header.frame_id = ros::this_node::getName();
+    ros_cameraInfoMsg_camera00.height = 0;
+    ros_cameraInfoMsg_camera00.width  = 0;
+    ros_cameraInfoMsg_camera00.D.resize(5);
+
+    ros_cameraInfoMsg_camera01.header.seq = 0;
+    ros_cameraInfoMsg_camera01.header.stamp = ros::Time::now();
+    ros_cameraInfoMsg_camera01.header.frame_id = ros::this_node::getName();
+    ros_cameraInfoMsg_camera01.height = 0;
+    ros_cameraInfoMsg_camera01.width  = 0;
+    ros_cameraInfoMsg_camera01.D.resize(5);
+
+    ros_cameraInfoMsg_camera02.header.seq = 0;
+    ros_cameraInfoMsg_camera02.header.stamp = ros::Time::now();
+    ros_cameraInfoMsg_camera02.header.frame_id = ros::this_node::getName();
+    ros_cameraInfoMsg_camera02.height = 0;
+    ros_cameraInfoMsg_camera02.width  = 0;
+    ros_cameraInfoMsg_camera02.D.resize(5);
+
+    ros_cameraInfoMsg_camera03.header.seq = 0;
+    ros_cameraInfoMsg_camera03.header.stamp = ros::Time::now();
+    ros_cameraInfoMsg_camera03.header.frame_id = ros::this_node::getName();
+    ros_cameraInfoMsg_camera03.height = 0;
+    ros_cameraInfoMsg_camera03.width  = 0;
+    ros_cameraInfoMsg_camera03.D.resize(5);
+
+    if(options.color || options.all_data)
     {
+        if(
+           !getCalibration(dir_root,"02",ros_cameraInfoMsg_camera02.K.data(),ros_cameraInfoMsg_camera02.D,ros_cameraInfoMsg_camera02.R.data(),ros_cameraInfoMsg_camera02.P.data()) &&
+           !getCalibration(dir_root,"03",ros_cameraInfoMsg_camera03.K.data(),ros_cameraInfoMsg_camera03.D,ros_cameraInfoMsg_camera03.R.data(),ros_cameraInfoMsg_camera03.P.data())
+          )
+        {
+            ROS_ERROR_STREAM("Error reading CAMERA02/CAMERA03 calibration");
+            node.shutdown();
+        }
+        //Assume same height/width for the camera pair
         full_filename_image02 = dir_image02 + boost::str(boost::format("%010d") % 0 ) + ".png";
         cv_image02 = cv::imread(full_filename_image02, CV_LOAD_IMAGE_UNCHANGED);
         cv::waitKey(5);
-        ros_cameraInfoMsg.height = cv_image02.rows;
-        ros_cameraInfoMsg.width  = cv_image02.cols;
+        ros_cameraInfoMsg_camera03.height = ros_cameraInfoMsg_camera02.height = cv_image02.rows;
+        ros_cameraInfoMsg_camera03.width  = ros_cameraInfoMsg_camera02.width  = cv_image02.cols;
     }
-    else if(options.grayscale)
+
+    if(options.grayscale || options.all_data)
     {
+        if(
+           !getCalibration(dir_root,"00",ros_cameraInfoMsg_camera00.K.data(),ros_cameraInfoMsg_camera00.D,ros_cameraInfoMsg_camera00.R.data(),ros_cameraInfoMsg_camera00.P.data()) &&
+           !getCalibration(dir_root,"01",ros_cameraInfoMsg_camera01.K.data(),ros_cameraInfoMsg_camera01.D,ros_cameraInfoMsg_camera01.R.data(),ros_cameraInfoMsg_camera01.P.data())
+          )
+        {
+            ROS_ERROR_STREAM("Error reading CAMERA00/CAMERA01 calibration");
+            node.shutdown();
+        }
+        //Assume same height/width for the camera pair
         full_filename_image00 = dir_image00 + boost::str(boost::format("%010d") % 0 ) + ".png";
         cv_image00 = cv::imread(full_filename_image00, CV_LOAD_IMAGE_UNCHANGED);
         cv::waitKey(5);
-        ros_cameraInfoMsg.height = cv_image00.rows;
-        ros_cameraInfoMsg.width  = cv_image00.cols;
+        ros_cameraInfoMsg_camera01.height = ros_cameraInfoMsg_camera00.height = cv_image00.rows;
+        ros_cameraInfoMsg_camera01.width  = ros_cameraInfoMsg_camera00.width  = cv_image00.cols;
     }
 
 
@@ -756,8 +813,10 @@ return 0;
             full_filename_image02 = dir_image02 + boost::str(boost::format("%010d") % entries_played ) + ".png";
             full_filename_image03 = dir_image03 + boost::str(boost::format("%010d") % entries_played ) + ".png";
             ROS_DEBUG_STREAM ( full_filename_image02 << endl << full_filename_image03 << endl << endl);
+
             cv_image02 = cv::imread(full_filename_image02, CV_LOAD_IMAGE_UNCHANGED);
             cv_image03 = cv::imread(full_filename_image03, CV_LOAD_IMAGE_UNCHANGED);
+
             if ( (cv_image02.data == NULL) || (cv_image03.data == NULL) ){
                 ROS_ERROR_STREAM("Error reading color images (02 & 03)");
                 ROS_ERROR_STREAM(full_filename_image02 << endl << full_filename_image03);
@@ -784,8 +843,8 @@ return 0;
             cv_bridge_img.image = cv_image03;
             cv_bridge_img.toImageMsg(ros_msg03);
 
-            pub02.publish(ros_msg02,ros_cameraInfoMsg);
-            pub03.publish(ros_msg03,ros_cameraInfoMsg);
+            pub02.publish(ros_msg02,ros_cameraInfoMsg_camera02);
+            pub03.publish(ros_msg03,ros_cameraInfoMsg_camera03);
 
         }
 
@@ -794,8 +853,10 @@ return 0;
             full_filename_image00 = dir_image00 + boost::str(boost::format("%010d") % entries_played ) + ".png";
             full_filename_image01 = dir_image01 + boost::str(boost::format("%010d") % entries_played ) + ".png";
             ROS_DEBUG_STREAM ( full_filename_image00 << endl << full_filename_image01 << endl << endl);
+
             cv_image00 = cv::imread(full_filename_image00, CV_LOAD_IMAGE_UNCHANGED);
             cv_image01 = cv::imread(full_filename_image01, CV_LOAD_IMAGE_UNCHANGED);
+
             if ( (cv_image00.data == NULL) || (cv_image01.data == NULL) ){
                 ROS_ERROR_STREAM("Error reading color images (00 & 01)");
                 ROS_ERROR_STREAM(full_filename_image00 << endl << full_filename_image01);
@@ -822,8 +883,8 @@ return 0;
             cv_bridge_img.image = cv_image01;
             cv_bridge_img.toImageMsg(ros_msg01);
 
-            pub00.publish(ros_msg00,ros_cameraInfoMsg);
-            pub01.publish(ros_msg01,ros_cameraInfoMsg);
+            pub00.publish(ros_msg00,ros_cameraInfoMsg_camera00);
+            pub01.publish(ros_msg01,ros_cameraInfoMsg_camera01);
 
         }
 
