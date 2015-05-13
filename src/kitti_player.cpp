@@ -13,6 +13,8 @@
  *
  * https://github.com/iralabdisco/kitti_player
  *
+ * WARNING: this package is using some C++11
+ *
  */
 
 // COMPILE-TIME CONFIGURATIONS //
@@ -61,6 +63,7 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/core/core.hpp>
 #include <image_transport/image_transport.h>
+#include <boost/tokenizer.hpp>
 
 using namespace std;
 using namespace pcl;
@@ -345,6 +348,88 @@ void publish_velodyne(ros::Publisher &pub, string infile)
 }
 
 
+int getCalibration(string dir_root, string camera_name, double* K,std::vector<double> & D,double *R,double* P){
+/*
+ *   from: http://kitti.is.tue.mpg.de/kitti/devkit_raw_data.zip
+ *   calib_cam_to_cam.txt: Camera-to-camera calibration
+ *   --------------------------------------------------
+ *
+ *     - S_xx: 1x2 size of image xx before rectification
+ *     - K_xx: 3x3 calibration matrix of camera xx before rectification
+ *     - D_xx: 1x5 distortion vector of camera xx before rectification
+ *     - R_xx: 3x3 rotation matrix of camera xx (extrinsic)
+ *     - T_xx: 3x1 translation vector of camera xx (extrinsic)
+ *     - S_rect_xx: 1x2 size of image xx after rectification
+ *     - R_rect_xx: 3x3 rectifying rotation to make image planes co-planar
+ *     - P_rect_xx: 3x4 projection matrix after rectification
+*/
+
+
+    string calib_cam_to_cam=dir_root+"calib_cam_to_cam.txt";
+    ifstream file_c2c(calib_cam_to_cam.c_str());
+    if (!file_c2c.is_open()) return 1;
+
+    ROS_INFO_STREAM("Reading camera" << camera_name << " calibration from " << calib_cam_to_cam);
+
+    typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
+    boost::char_separator<char> sep{" "};
+
+    vector< string > vec;
+    string line;
+
+    while (getline(file_c2c,line))
+    {
+        tokenizer tok(line,sep);
+
+//        for (const auto &t : tok)
+//            std::cout << t << '\n';
+
+        tokenizer::iterator token_iterator(tok.begin());
+
+        if (strcmp((*token_iterator).c_str(),((string)(string("K_")+camera_name+string(":"))).c_str())==0) //Calibration Matrix
+        {
+            cout << "K_00" << endl;
+        }
+        if (strcmp((*token_iterator).c_str(),((string)(string("D_")+camera_name+string(":"))).c_str())==0) //Distortion Coefficients
+        {
+            cout << "D_00" << endl;
+        }
+        if (strcmp((*token_iterator).c_str(),((string)(string("R_")+camera_name+string(":"))).c_str())==0) //Rectification Matrix
+        {
+            cout << "R_00" << endl;
+        }
+        if (strcmp((*token_iterator).c_str(),((string)(string("P_rect_")+camera_name+string(":"))).c_str())==0) //Projection Matrix Rectified
+        {
+            cout << "P_rect_00" << endl;
+        }
+
+    }
+
+//    double K[9];         // Calibration Matrix
+//    double D[5];         // Distortion Coefficients
+//    double R[9];         // Rectification Matrix
+//    double P[12];        // Projection Matrix Rectified (u,v,w) = P * R * (x,y,z,q)
+
+    for(int i=0;i<9;i++)
+        K[i] = 0;
+    K[8] = 1;
+
+//    K[0] = config["K"]["fx"].as<double>();
+//    K[4] = config["K"]["fy"].as<double>();
+//    K[2] = config["K"]["cx"].as<double>();
+//    K[5] = config["K"]["cy"].as<double>();
+
+//    for(int i=0;i<5;i++)
+//        this->D[i] = config["D"][i].as<double>();
+
+//    for(int i=0;i<12;i++){
+//        this->P[i] = config["P"][i].as<double>();
+//    }
+
+//    for(int i=0;i<9;i++)
+//        this->R[i] = config["R"][i].as<double>();
+
+}
 
 int main(int argc, char **argv)
 {
@@ -427,6 +512,20 @@ int main(int argc, char **argv)
     std::string encoding;
     ros::Rate loop_rate(options.frequency);
 
+    image_transport::ImageTransport it(node);
+    image_transport::CameraPublisher pub00 = it.advertiseCamera("image00", 1);
+    image_transport::CameraPublisher pub01 = it.advertiseCamera("image01", 1);
+    image_transport::CameraPublisher pub02 = it.advertiseCamera("image02", 1);
+    image_transport::CameraPublisher pub03 = it.advertiseCamera("image03", 1);
+
+    sensor_msgs::Image ros_msg00;
+    sensor_msgs::Image ros_msg01;
+    sensor_msgs::Image ros_msg02;
+    sensor_msgs::Image ros_msg03;
+
+    sensor_msgs::CameraInfo ros_cameraInfoMsg;
+    cv_bridge::CvImage cv_bridge_img;
+
 
     if (vm.count("help")) {
         cout << desc << endl;
@@ -444,7 +543,7 @@ int main(int argc, char **argv)
         cout << "    ├── oxts                  " << endl;
         cout << "    │   └── data              " << endl;
         cout << "    └── velodyne_points       " << endl;
-        cout << "        └── data              " << endl << endl;
+        cout << "        └── data              " << endl << endl; //todo add calib_cam_to_cam.txt
 
         return 1;
     }
@@ -503,7 +602,6 @@ int main(int argc, char **argv)
     }
 
     // publish color images
-
 
     //count elements in the folder
 
@@ -599,45 +697,57 @@ int main(int argc, char **argv)
         }
     }
 
+
     if(options.viewer)
     {
         ROS_INFO_STREAM("Opening CV viewer(s)");
         if(options.color || options.all_data)
         {
             ROS_DEBUG_STREAM("color||all " << options.color << " " << options.all_data);
-            cv::namedWindow("CameraSimulator Color Viewer",CV_WINDOW_AUTOSIZE); //FIX CV_LOAD_IMAGE_UNCHANGED
+            cv::namedWindow("CameraSimulator Color Viewer",CV_WINDOW_AUTOSIZE);
+            full_filename_image02 = dir_image02 + boost::str(boost::format("%010d") % 0 ) + ".png";
+            cv_image02 = cv::imread(full_filename_image02, CV_LOAD_IMAGE_UNCHANGED);
             cv::waitKey(5);
         }
         if(options.grayscale|| options.all_data)
         {
             ROS_DEBUG_STREAM("grayscale||all " << options.grayscale << " " << options.all_data);
             cv::namedWindow("CameraSimulator Greyscale Viewer",CV_WINDOW_AUTOSIZE);
+            full_filename_image00 = dir_image00 + boost::str(boost::format("%010d") % 0 ) + ".png";
+            cv_image00 = cv::imread(full_filename_image00, CV_LOAD_IMAGE_UNCHANGED);
             cv::waitKey(5);
         }
         ROS_INFO_STREAM("Opening CV viewer(s)... OK");
     }
 
-    image_transport::ImageTransport it(node);
-    image_transport::CameraPublisher pub00 = it.advertiseCamera("image00", 1);
-    image_transport::CameraPublisher pub01 = it.advertiseCamera("image01", 1);
-    image_transport::CameraPublisher pub02 = it.advertiseCamera("image02", 1);
-    image_transport::CameraPublisher pub03 = it.advertiseCamera("image03", 1);
-
-    sensor_msgs::Image ros_msg00;
-    sensor_msgs::Image ros_msg01;
-    sensor_msgs::Image ros_msg02;
-    sensor_msgs::Image ros_msg03;
-
-    sensor_msgs::CameraInfo ros_cameraInfoMsg;
-    cv_bridge::CvImage cv_bridge_img;
-
+    // CAMERA INFO SECTION: read one for all
     ros_cameraInfoMsg.header.seq = 0;
     ros_cameraInfoMsg.header.stamp = ros::Time::now();
     ros_cameraInfoMsg.header.frame_id = ros::this_node::getName();
-    ros_cameraInfoMsg.height = 0; //FIXME read image
+    ros_cameraInfoMsg.height = 0;
     ros_cameraInfoMsg.width  = 0;
     ros_cameraInfoMsg.D.resize(5);
-    //camera_data.getCalibration(infoMsg.K.data(),infoMsg.D,infoMsg.R.data(),infoMsg.P.data());
+    if (getCalibration(dir_root,"01",ros_cameraInfoMsg.K.data(),ros_cameraInfoMsg.D,ros_cameraInfoMsg.R.data(),ros_cameraInfoMsg.P.data()))
+        return -1;
+return 0;
+
+    if(options.color)
+    {
+        full_filename_image02 = dir_image02 + boost::str(boost::format("%010d") % 0 ) + ".png";
+        cv_image02 = cv::imread(full_filename_image02, CV_LOAD_IMAGE_UNCHANGED);
+        cv::waitKey(5);
+        ros_cameraInfoMsg.height = cv_image02.rows;
+        ros_cameraInfoMsg.width  = cv_image02.cols;
+    }
+    else if(options.grayscale)
+    {
+        full_filename_image00 = dir_image00 + boost::str(boost::format("%010d") % 0 ) + ".png";
+        cv_image00 = cv::imread(full_filename_image00, CV_LOAD_IMAGE_UNCHANGED);
+        cv::waitKey(5);
+        ros_cameraInfoMsg.height = cv_image00.rows;
+        ros_cameraInfoMsg.width  = cv_image00.cols;
+    }
+
 
     do
     {
