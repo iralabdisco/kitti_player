@@ -352,16 +352,16 @@ int main(int argc, char **argv)
 
     po::options_description desc("Kitti_player, a player for KITTI raw datasets\nDatasets can be downloaded from: http://www.cvlibs.net/datasets/kitti/raw_data.php\n\nAllowed options:",150);
     desc.add_options()
-        ("help,h"                                                                        , "help message")
+        ("help,h"                                                                                   , "help message")
         ("directory,d", po::value<string>(&options.path)->required()                                , "path to the kitti dataset Directory")
-        ("frequency,f", po::value<float>(&options.frequency)->default_value(1.0)       , "set replay Frequency")
-        ("all      ,a", po::value<bool> (&options.all_data)->implicit_value(1)       , "replay All data")
-        ("velodyne ,v", po::value<bool> (&options.velodyne)->implicit_value(1)      , "replay Velodyne data")
-        ("gps      ,g", po::value<bool> (&options.gps)->implicit_value(1)           , "replay Gps data")
-        ("imu      ,i", po::value<bool> (&options.imu)->implicit_value(1)           , "replay Imu data")
-        ("grayscale,G", po::value<bool> (&options.grayscale)->implicit_value(1)     , "replay Stereo Grayscale images")
-        ("color    ,C", po::value<bool> (&options.color)->implicit_value(1)         , "replay Stereo Color images")
-        ("viewer     ", po::value<bool> (&options.viewer)->implicit_value(1)         , "enable image viewer")
+        ("frequency,f", po::value<float>(&options.frequency)->default_value(1.0)                    , "set replay Frequency")
+        ("all      ,a", po::value<bool> (&options.all_data) ->implicit_value(1) ->default_value(0)  , "replay All data")
+        ("velodyne ,v", po::value<bool> (&options.velodyne) ->implicit_value(1) ->default_value(0)  , "replay Velodyne data")
+        ("gps      ,g", po::value<bool> (&options.gps)      ->implicit_value(1) ->default_value(0)  , "replay Gps data")
+        ("imu      ,i", po::value<bool> (&options.imu)      ->implicit_value(1) ->default_value(0)  , "replay Imu data")
+        ("grayscale,G", po::value<bool> (&options.grayscale)->implicit_value(1) ->default_value(0)  , "replay Stereo Grayscale images")
+        ("color    ,C", po::value<bool> (&options.color)    ->implicit_value(1) ->default_value(0)  , "replay Stereo Color images")
+        ("viewer     ", po::value<bool> (&options.viewer)   ->implicit_value(1) ->default_value(0)  , "enable image viewer")
     ;
 
     try
@@ -369,6 +369,16 @@ int main(int argc, char **argv)
         po::parsed_options parsed = po::command_line_parser(argc, argv).options(desc).allow_unregistered().run();
         po::store(parsed, vm);
         po::notify(vm);
+
+        vector<string> to_pass_further = po::collect_unrecognized(parsed.options, po::include_positional);
+
+        if (to_pass_further.size()>0)
+        {
+            ROS_WARN_STREAM("Unknown Options Detected, shutting down node\n");
+            cerr << desc << endl;
+            return -1;
+
+        }
     }
     catch(...)
     {
@@ -399,8 +409,9 @@ int main(int argc, char **argv)
     struct dirent *ent;
     std::string frames_dir;
     std::vector<std::string> dataset_entries;
-    unsigned long total_entries = 0; //number of elements to be played
-    unsigned long entries_played  = 0; //number of elements played until now
+    unsigned long total_entries = 0;        //number of elements to be played
+    unsigned long entries_played  = 0;      //number of elements played until now
+    unsigned int len = 0;                   //counting elements support variable
     string dir_root             ;
     string dir_image00          ;string full_filename_image00;
     string dir_image01          ;string full_filename_image01;
@@ -491,10 +502,18 @@ int main(int argc, char **argv)
 
 
     //count elements in the folder
+
     if (options.all_data)
     {
         dir = opendir(dir_image02.c_str());
-        while(ent = readdir(dir))  ++total_entries;
+        while(ent = readdir(dir))
+        {
+            //skip . & ..
+            len = strlen (ent->d_name);
+            //skip . & ..
+            if (len>2)
+                total_entries++;
+        }
         closedir (dir);
     }
     else
@@ -504,15 +523,28 @@ int main(int argc, char **argv)
         {
             total_entries=0;
             dir = opendir(dir_image02.c_str());
-            while(ent = readdir(dir))  ++total_entries;
-            closedir (dir);
+            while(ent = readdir(dir))
+            {
+                //skip . & ..
+                len = strlen (ent->d_name);
+                //skip . & ..
+                if (len>2)
+                    total_entries++;
+            }            closedir (dir);
             done=true;
         }
         if (!done && options.grayscale)
         {
             total_entries=0;
             dir = opendir(dir_image00.c_str());
-            while(ent = readdir(dir))  ++total_entries;
+            while(ent = readdir(dir))
+            {
+                //skip . & ..
+                len = strlen (ent->d_name);
+                //skip . & ..
+                if (len>2)
+                    total_entries++;
+            }
             closedir (dir);
             done=true;
         }
@@ -520,7 +552,14 @@ int main(int argc, char **argv)
         {
             total_entries=0;
             dir = opendir(dir_oxts.c_str());
-            while(ent = readdir(dir))  ++total_entries;
+            while(ent = readdir(dir))
+            {
+                //skip . & ..
+                len = strlen (ent->d_name);
+                //skip . & ..
+                if (len>2)
+                    total_entries++;
+            }
             closedir (dir);
             done=true;
         }
@@ -528,15 +567,29 @@ int main(int argc, char **argv)
         {
             total_entries=0;
             dir = opendir(dir_oxts.c_str());
-            while(ent = readdir(dir))  ++total_entries;
+            while(ent = readdir(dir))
+            {
+                //skip . & ..
+                len = strlen (ent->d_name);
+                //skip . & ..
+                if (len>2)
+                    total_entries++;
+            }
             closedir (dir);
             done=true;
         }
         if (!done && options.velodyne)
         {
             total_entries=0;
-            dir = opendir(dir_oxts.c_str());
-            while(ent = readdir(dir))  ++total_entries;
+            dir = opendir(dir_oxts.c_str());            
+            while(ent = readdir(dir))
+            {
+                //skip . & ..
+                len = strlen (ent->d_name);
+                //skip . & ..
+                if (len>2)
+                    total_entries++;
+            }
             closedir (dir);
             done=true;
         }
@@ -547,12 +600,15 @@ int main(int argc, char **argv)
         ROS_INFO_STREAM("Opening CV viewer(s)");
         if(options.color || options.all_data)
         {
-            //TODO: FIX FIX VENGONO APERTE SEMPRE DUE FINESTRE. ...
+            ROS_DEBUG_STREAM("color||all " << options.color << " " << options.all_data);
             cv::namedWindow("CameraSimulator Color Viewer",CV_WINDOW_AUTOSIZE);
+            cv::waitKey(5);
         }
         if(options.grayscale|| options.all_data)
         {
+            ROS_DEBUG_STREAM("grayscale||all " << options.grayscale << " " << options.all_data);
             cv::namedWindow("CameraSimulator Greyscale Viewer",CV_WINDOW_AUTOSIZE);
+            cv::waitKey(5);
         }
         ROS_INFO_STREAM("Opening CV viewer(s)... OK");
     }
@@ -563,58 +619,108 @@ int main(int argc, char **argv)
     image_transport::CameraPublisher pub02 = it.advertiseCamera("image02", 1);
     image_transport::CameraPublisher pub03 = it.advertiseCamera("image03", 1);
 
+
     do
     {
-        if(options.color )
+        if(options.color || options.all_data)
         {
-
-            cout << "AAA" << endl << options.color  << endl << options.all_data << endl;
             full_filename_image02 = dir_image02 + boost::str(boost::format("%010d") % entries_played ) + ".png";
             full_filename_image03 = dir_image03 + boost::str(boost::format("%010d") % entries_played ) + ".png";
             ROS_DEBUG_STREAM ( full_filename_image02 << endl << full_filename_image03 << endl << endl);
             image02 = cv::imread(full_filename_image02, CV_LOAD_IMAGE_UNCHANGED);
             image03 = cv::imread(full_filename_image03, CV_LOAD_IMAGE_UNCHANGED);
             if ( (image02.data == NULL) || (image03.data == NULL) ){
-                ROS_ERROR("Error reading color images (02 & 03)");
+                ROS_ERROR_STREAM("Error reading color images (02 & 03)");
+                ROS_ERROR_STREAM(full_filename_image02 << endl << full_filename_image03);
                 node.shutdown();
                 return -1;
             }
 
             if(options.viewer)
             {
+                //display the left image only
                 cv::imshow("CameraSimulator Color Viewer",image02);
-                cv::waitKey(5); //5 milliseconds
+                //give some time to draw images
+                cv::waitKey(5);
             }
         }
 
-        if(options.grayscale )
+        if(options.grayscale || options.all_data)
         {
-            cout << "BBB" << endl << options.grayscale  << endl << options.all_data << endl;
             full_filename_image00 = dir_image00 + boost::str(boost::format("%010d") % entries_played ) + ".png";
             full_filename_image01 = dir_image01 + boost::str(boost::format("%010d") % entries_played ) + ".png";
             ROS_DEBUG_STREAM ( full_filename_image00 << endl << full_filename_image01 << endl << endl);
             image00 = cv::imread(full_filename_image00, CV_LOAD_IMAGE_UNCHANGED);
             image01 = cv::imread(full_filename_image01, CV_LOAD_IMAGE_UNCHANGED);
             if ( (image00.data == NULL) || (image01.data == NULL) ){
-                ROS_ERROR("Error reading color images (00 & 01)");
+                ROS_ERROR_STREAM("Error reading color images (00 & 01)");
+                ROS_ERROR_STREAM(full_filename_image00 << endl << full_filename_image01);
                 node.shutdown();
                 return -1;
             }
 
             if(options.viewer)
             {
+                //display the left image only
                 cv::imshow("CameraSimulator Greyscale Viewer",image00);
-                cv::waitKey(5); //5 milliseconds
+                //give some time to draw images
+                cv::waitKey(5);
             }
         }
 
-
-
         entries_played++;
         loop_rate.sleep();
-    }while(entries_played<total_entries && ros::ok());
+    }while(entries_played<=total_entries-1 && ros::ok());
+
+    ROS_INFO_STREAM("Done!");
+    node.shutdown();
 
     return -1;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     exitIfNotFound = false;
 
