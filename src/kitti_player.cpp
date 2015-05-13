@@ -1,4 +1,4 @@
-// redmine usage: This commit refs #388
+// redmine usage: This commit refs #388 @2h
 
 // ###############################################################################################
 // ###############################################################################################
@@ -56,6 +56,7 @@
 #include <boost/lexical_cast.hpp>
 #include <string>
 
+#include "sensor_msgs/image_encodings.h"
 #include "cv_bridge/cv_bridge.h"
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/core/core.hpp>
@@ -419,7 +420,10 @@ int main(int argc, char **argv)
     string dir_image03          ;string full_filename_image03;
     string dir_oxts             ;
     string dir_velodyne_points  ;
-    cv::Mat image00,image01,image02,image03;
+    cv::Mat cv_image00;
+    cv::Mat cv_image01;
+    cv::Mat cv_image02;
+    cv::Mat cv_image03;
     std::string encoding;
     ros::Rate loop_rate(options.frequency);
 
@@ -601,7 +605,7 @@ int main(int argc, char **argv)
         if(options.color || options.all_data)
         {
             ROS_DEBUG_STREAM("color||all " << options.color << " " << options.all_data);
-            cv::namedWindow("CameraSimulator Color Viewer",CV_WINDOW_AUTOSIZE);
+            cv::namedWindow("CameraSimulator Color Viewer",CV_WINDOW_AUTOSIZE); //FIX CV_LOAD_IMAGE_UNCHANGED
             cv::waitKey(5);
         }
         if(options.grayscale|| options.all_data)
@@ -619,6 +623,21 @@ int main(int argc, char **argv)
     image_transport::CameraPublisher pub02 = it.advertiseCamera("image02", 1);
     image_transport::CameraPublisher pub03 = it.advertiseCamera("image03", 1);
 
+    sensor_msgs::Image ros_msg00;
+    sensor_msgs::Image ros_msg01;
+    sensor_msgs::Image ros_msg02;
+    sensor_msgs::Image ros_msg03;
+
+    sensor_msgs::CameraInfo ros_cameraInfoMsg;
+    cv_bridge::CvImage cv_bridge_img;
+
+    ros_cameraInfoMsg.header.seq = 0;
+    ros_cameraInfoMsg.header.stamp = ros::Time::now();
+    ros_cameraInfoMsg.header.frame_id = ros::this_node::getName();
+    ros_cameraInfoMsg.height = 0; //FIXME read image
+    ros_cameraInfoMsg.width  = 0;
+    ros_cameraInfoMsg.D.resize(5);
+    //camera_data.getCalibration(infoMsg.K.data(),infoMsg.D,infoMsg.R.data(),infoMsg.P.data());
 
     do
     {
@@ -627,9 +646,9 @@ int main(int argc, char **argv)
             full_filename_image02 = dir_image02 + boost::str(boost::format("%010d") % entries_played ) + ".png";
             full_filename_image03 = dir_image03 + boost::str(boost::format("%010d") % entries_played ) + ".png";
             ROS_DEBUG_STREAM ( full_filename_image02 << endl << full_filename_image03 << endl << endl);
-            image02 = cv::imread(full_filename_image02, CV_LOAD_IMAGE_UNCHANGED);
-            image03 = cv::imread(full_filename_image03, CV_LOAD_IMAGE_UNCHANGED);
-            if ( (image02.data == NULL) || (image03.data == NULL) ){
+            cv_image02 = cv::imread(full_filename_image02, CV_LOAD_IMAGE_UNCHANGED);
+            cv_image03 = cv::imread(full_filename_image03, CV_LOAD_IMAGE_UNCHANGED);
+            if ( (cv_image02.data == NULL) || (cv_image03.data == NULL) ){
                 ROS_ERROR_STREAM("Error reading color images (02 & 03)");
                 ROS_ERROR_STREAM(full_filename_image02 << endl << full_filename_image03);
                 node.shutdown();
@@ -639,10 +658,25 @@ int main(int argc, char **argv)
             if(options.viewer)
             {
                 //display the left image only
-                cv::imshow("CameraSimulator Color Viewer",image02);
+                cv::imshow("CameraSimulator Color Viewer",cv_image02);
                 //give some time to draw images
                 cv::waitKey(5);
             }
+
+            cv_bridge_img.header.stamp = ros::Time::now();
+            cv_bridge_img.encoding = sensor_msgs::image_encodings::BGR8; //sensor_msgs::image_encodings::MONO8
+            cv_bridge_img.header.frame_id = ros::this_node::getName();
+            cv_bridge_img.header.seq = entries_played;
+
+            cv_bridge_img.image = cv_image02;
+            cv_bridge_img.toImageMsg(ros_msg02);
+
+            cv_bridge_img.image = cv_image03;
+            cv_bridge_img.toImageMsg(ros_msg03);
+
+            pub02.publish(ros_msg02,ros_cameraInfoMsg);
+            pub03.publish(ros_msg03,ros_cameraInfoMsg);
+
         }
 
         if(options.grayscale || options.all_data)
@@ -650,9 +684,9 @@ int main(int argc, char **argv)
             full_filename_image00 = dir_image00 + boost::str(boost::format("%010d") % entries_played ) + ".png";
             full_filename_image01 = dir_image01 + boost::str(boost::format("%010d") % entries_played ) + ".png";
             ROS_DEBUG_STREAM ( full_filename_image00 << endl << full_filename_image01 << endl << endl);
-            image00 = cv::imread(full_filename_image00, CV_LOAD_IMAGE_UNCHANGED);
-            image01 = cv::imread(full_filename_image01, CV_LOAD_IMAGE_UNCHANGED);
-            if ( (image00.data == NULL) || (image01.data == NULL) ){
+            cv_image00 = cv::imread(full_filename_image00, CV_LOAD_IMAGE_UNCHANGED);
+            cv_image01 = cv::imread(full_filename_image01, CV_LOAD_IMAGE_UNCHANGED);
+            if ( (cv_image00.data == NULL) || (cv_image01.data == NULL) ){
                 ROS_ERROR_STREAM("Error reading color images (00 & 01)");
                 ROS_ERROR_STREAM(full_filename_image00 << endl << full_filename_image01);
                 node.shutdown();
@@ -662,15 +696,48 @@ int main(int argc, char **argv)
             if(options.viewer)
             {
                 //display the left image only
-                cv::imshow("CameraSimulator Greyscale Viewer",image00);
+                cv::imshow("CameraSimulator Greyscale Viewer",cv_image00);
                 //give some time to draw images
                 cv::waitKey(5);
             }
+
+            cv_bridge_img.header.stamp = ros::Time::now();
+            cv_bridge_img.encoding = sensor_msgs::image_encodings::MONO8;
+            cv_bridge_img.header.frame_id = ros::this_node::getName();
+            cv_bridge_img.header.seq = entries_played;
+
+            cv_bridge_img.image = cv_image00;
+            cv_bridge_img.toImageMsg(ros_msg00);
+
+            cv_bridge_img.image = cv_image01;
+            cv_bridge_img.toImageMsg(ros_msg01);
+
+            pub00.publish(ros_msg00,ros_cameraInfoMsg);
+            pub01.publish(ros_msg01,ros_cameraInfoMsg);
+
         }
+
+//        if(options.grayscale || options.all_data)
+//        {
+//        publish_velodyne(map_pub, sequence_path);
+//        }
+
+
 
         entries_played++;
         loop_rate.sleep();
     }while(entries_played<=total_entries-1 && ros::ok());
+
+
+
+
+
+
+
+    // TODO
+//    if(viewer)
+//        cv::destroyWindow("CameraSimulator Viewer");
+
 
     ROS_INFO_STREAM("Done!");
     node.shutdown();
