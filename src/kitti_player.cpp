@@ -303,15 +303,17 @@ void publish_static_transforms()
 /** 
  * \brief Publish the velodyne data
 */
-void publish_velodyne(ros::Publisher &pub, string infile)
+int publish_velodyne(ros::Publisher &pub, string infile)
 {
     fstream input(infile.c_str(), ios::in | ios::binary);
-    if(!input.good()){
-        cerr << "Could not read file: " << infile << endl;
+    if(!input.good())
+    {
+        ROS_ERROR_STREAM ( "Could not read file: " << infile );
+        return 0;
     }
     else
     {
-        cout << infile << endl;
+        ROS_DEBUG_STREAM ("reading " << infile);
         input.seekg(0, ios::beg);
 
         pcl::PointCloud<pcl::PointXYZI>::Ptr points (new pcl::PointCloud<pcl::PointXYZI>);
@@ -328,23 +330,13 @@ void publish_velodyne(ros::Publisher &pub, string infile)
         //workaround for the PCL headers... http://wiki.ros.org/hydro/Migration#PCL
         sensor_msgs::PointCloud2 pc2;
 
-        //uncertain frame link
-        if (generateUncertain)
-        {
-            pc2.header.frame_id=laser_frame;
-            pc2.header.stamp=ros::Time::now();
-            points->header = pcl_conversions::toPCL(pc2.header);
-            pub.publish(points);    //publish the PCL as
-        }
-
         //ground truth frame link
-        if (generateGroundtruth)
-        {
-            pc2.header.frame_id=gt_laser_frame;
-            pc2.header.stamp=ros::Time::now();
-            points->header = pcl_conversions::toPCL(pc2.header);
-            pub.publish(points);
-        }
+        pc2.header.frame_id=gt_laser_frame;
+        pc2.header.stamp=ros::Time::now();
+        points->header = pcl_conversions::toPCL(pc2.header);
+        pub.publish(points);
+
+        return 1;
     }
 }
 
@@ -370,13 +362,12 @@ int getCalibration(string dir_root, string camera_name, double* K,std::vector<do
     //    double R[9];         // Rectification Matrix
     //    double P[12];        // Projection Matrix Rectified (u,v,w) = P * R * (x,y,z,q)
 
-
     string calib_cam_to_cam=dir_root+"calib_cam_to_cam.txt";
     ifstream file_c2c(calib_cam_to_cam.c_str());
     if (!file_c2c.is_open())
         return false;
 
-    ROS_INFO_STREAM("Reading camera" << camera_name << " calibration from " << calib_cam_to_cam);
+    ROS_INFO_STREAM("Reading camera" << camera_name << " calibration from " << calib_cam_to_cam); //TODO perché qui si entra solo due volte?
 
     typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
     boost::char_separator<char> sep{" "};
@@ -442,7 +433,7 @@ int getCalibration(string dir_root, string camera_name, double* K,std::vector<do
         }
 
     }
-
+    ROS_INFO_STREAM("... ok");
     return true;
 }
 
@@ -506,6 +497,8 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "kitti_player");
     ros::NodeHandle node;
 
+    node.param<string>("gt_laser_frame",gt_laser_frame,"/laser_frame");
+
     DIR *dir;
     struct dirent *ent;
     std::string frames_dir;
@@ -519,7 +512,7 @@ int main(int argc, char **argv)
     string dir_image02          ;string full_filename_image02;
     string dir_image03          ;string full_filename_image03;
     string dir_oxts             ;
-    string dir_velodyne_points  ;
+    string dir_velodyne_points  ;string full_filename_velodyne;
     cv::Mat cv_image00;
     cv::Mat cv_image01;
     cv::Mat cv_image02;
@@ -545,6 +538,8 @@ int main(int argc, char **argv)
     sensor_msgs::CameraInfo ros_cameraInfoMsg_camera03;
 
     cv_bridge::CvImage cv_bridge_img;
+
+    ros::Publisher map_pub = node.advertise<pcl::PointCloud<pcl::PointXYZ> > ("/cloud_in", 1, true);
 
 
     if (vm.count("help")) {
@@ -621,7 +616,7 @@ int main(int argc, char **argv)
         ROS_INFO_STREAM (options.path << "\t[OK]");
     }
 
-    // publish color images
+
 
     //count elements in the folder
 
@@ -729,7 +724,7 @@ int main(int argc, char **argv)
             cv_image02 = cv::imread(full_filename_image02, CV_LOAD_IMAGE_UNCHANGED);
             cv::waitKey(5);
         }
-        if(options.grayscale|| options.all_data)
+        if(options.grayscale || options.all_data)
         {
             ROS_DEBUG_STREAM("grayscale||all " << options.grayscale << " " << options.all_data);
             cv::namedWindow("CameraSimulator Grayscale Viewer",CV_WINDOW_AUTOSIZE);
@@ -773,12 +768,13 @@ int main(int argc, char **argv)
     if(options.color || options.all_data)
     {
         if(
-           !getCalibration(dir_root,"02",ros_cameraInfoMsg_camera02.K.data(),ros_cameraInfoMsg_camera02.D,ros_cameraInfoMsg_camera02.R.data(),ros_cameraInfoMsg_camera02.P.data()) &&
-           !getCalibration(dir_root,"03",ros_cameraInfoMsg_camera03.K.data(),ros_cameraInfoMsg_camera03.D,ros_cameraInfoMsg_camera03.R.data(),ros_cameraInfoMsg_camera03.P.data())
+           !(getCalibration(dir_root,"02",ros_cameraInfoMsg_camera02.K.data(),ros_cameraInfoMsg_camera02.D,ros_cameraInfoMsg_camera02.R.data(),ros_cameraInfoMsg_camera02.P.data()) &&
+           getCalibration(dir_root,"03",ros_cameraInfoMsg_camera03.K.data(),ros_cameraInfoMsg_camera03.D,ros_cameraInfoMsg_camera03.R.data(),ros_cameraInfoMsg_camera03.P.data()))
           )
         {
             ROS_ERROR_STREAM("Error reading CAMERA02/CAMERA03 calibration");
             node.shutdown();
+            return -1;
         }
         //Assume same height/width for the camera pair
         full_filename_image02 = dir_image02 + boost::str(boost::format("%010d") % 0 ) + ".png";
@@ -791,12 +787,13 @@ int main(int argc, char **argv)
     if(options.grayscale || options.all_data)
     {
         if(
-           !getCalibration(dir_root,"00",ros_cameraInfoMsg_camera00.K.data(),ros_cameraInfoMsg_camera00.D,ros_cameraInfoMsg_camera00.R.data(),ros_cameraInfoMsg_camera00.P.data()) &&
-           !getCalibration(dir_root,"01",ros_cameraInfoMsg_camera01.K.data(),ros_cameraInfoMsg_camera01.D,ros_cameraInfoMsg_camera01.R.data(),ros_cameraInfoMsg_camera01.P.data())
+           !(getCalibration(dir_root,"00",ros_cameraInfoMsg_camera00.K.data(),ros_cameraInfoMsg_camera00.D,ros_cameraInfoMsg_camera00.R.data(),ros_cameraInfoMsg_camera00.P.data()) &&
+           getCalibration(dir_root,"01",ros_cameraInfoMsg_camera01.K.data(),ros_cameraInfoMsg_camera01.D,ros_cameraInfoMsg_camera01.R.data(),ros_cameraInfoMsg_camera01.P.data()))
           )
         {
             ROS_ERROR_STREAM("Error reading CAMERA00/CAMERA01 calibration");
             node.shutdown();
+            return -1;
         }
         //Assume same height/width for the camera pair
         full_filename_image00 = dir_image00 + boost::str(boost::format("%010d") % 0 ) + ".png";
@@ -807,6 +804,8 @@ int main(int argc, char **argv)
     }
 
     boost::progress_display progress(total_entries) ;
+
+    publish_static_transforms();
 
     do
     {
@@ -890,15 +889,17 @@ int main(int argc, char **argv)
 
         }
 
-//        if(options.grayscale || options.all_data)
-//        {
-//        publish_velodyne(map_pub, sequence_path);
-//        }
+        if(options.velodyne || options.all_data)
+        {
+            full_filename_velodyne=dir_velodyne_points + boost::str(boost::format("%010d") % entries_played ) + ".bin";
+            publish_velodyne(map_pub, full_filename_velodyne);
+        }
 
 
         ++progress;
         entries_played++;
         loop_rate.sleep();
+        publish_static_transforms();
     }while(entries_played<=total_entries-1 && ros::ok());
 
 
@@ -952,17 +953,6 @@ int main(int argc, char **argv)
 
 
 
-
-
-
-
-
-
-
-
-
-
-
     exitIfNotFound = false;
 
     Random random;
@@ -975,7 +965,7 @@ int main(int argc, char **argv)
     f = boost::bind(&callback, _1, _2);
     srv.setCallback(f);
 
-    ros::Publisher map_pub = node.advertise<pcl::PointCloud<pcl::PointXYZ> > ("/cloud_in", 1, true);
+
     ros::Publisher initialpose_pub = node.advertise<geometry_msgs::PoseWithCovarianceStamped>("/initialpose", 1);
 
     path = argv[1];
@@ -987,7 +977,7 @@ int main(int argc, char **argv)
     node.param<string>("odom_frame",odom_frame,"/odom"); //odom
 
     node.param<string>("gt_camera_ref_frame",gt_camera_ref_frame,"/gt_camera_ref");
-    node.param<string>("gt_laser_frame",gt_laser_frame,"/laser_frame");
+
     node.param<string>("gt_robot_frame",gt_robot_frame,"/cart_frame");
 
     node.param<string>("camera_ref_frame",camera_ref_frame,"/BIASED_camera_ref");
