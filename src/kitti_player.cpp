@@ -67,9 +67,10 @@ struct kitti_player_options
     bool    color;          // publish
     bool    viewer;         // enable CV viewer
     bool    timestamps;     // use KITTI timestamps;
+    bool    sendTransform;  // publish velodyne TF IMU 3DOF orientation wrt fixed frame
 };
 
-int publish_velodyne(ros::Publisher &pub, string infile, std_msgs::Header *header)
+int publish_velodyne(ros::Publisher &pub, string infile, std_msgs::Header *header,bool sendtransform)
 {
     fstream input(infile.c_str(), ios::in | ios::binary);
     if(!input.good())
@@ -96,8 +97,10 @@ int publish_velodyne(ros::Publisher &pub, string infile, std_msgs::Header *heade
         //workaround for the PCL headers... http://wiki.ros.org/hydro/Migration#PCL
         sensor_msgs::PointCloud2 pc2;
 
-        //ground truth frame link
-        pc2.header.frame_id= "imu" ; //ros::this_node::getName();
+        if (sendtransform)
+            pc2.header.frame_id= "imu" ;
+        else
+            pc2.header.frame_id= ros::this_node::getName();
         pc2.header.stamp=header->stamp;
         points->header = pcl_conversions::toPCL(pc2.header);
         pub.publish(points);
@@ -330,19 +333,21 @@ int main(int argc, char **argv)
     kitti_player_options options;
     po::variables_map vm;
 
-    po::options_description desc("Kitti_player, a player for KITTI raw datasets\nDatasets can be downloaded from: http://www.cvlibs.net/datasets/kitti/raw_data.php\n\nAllowed options:",150);
+    po::options_description desc("Kitti_player, a player for KITTI raw datasets\nDatasets can be downloaded from: http://www.cvlibs.net/datasets/kitti/raw_data.php\n\nAllowed options",200);
     desc.add_options()
-        ("help,h"                                                                                   , "help message")
-        ("directory ,d", po::value<string>(&options.path)->required()                                , "path to the kitti dataset Directory")
-        ("frequency ,f", po::value<float>(&options.frequency) ->default_value(1.0)                    , "set replay Frequency")
-        ("all       ,a", po::value<bool> (&options.all_data)  ->implicit_value(1) ->default_value(0)  , "replay All data")
-        ("velodyne  ,v", po::value<bool> (&options.velodyne)  ->implicit_value(1) ->default_value(0)  , "replay Velodyne data")
-        ("gps       ,g", po::value<bool> (&options.gps)       ->implicit_value(1) ->default_value(0)  , "replay Gps data")
-        ("imu       ,i", po::value<bool> (&options.imu)       ->implicit_value(1) ->default_value(0)  , "replay Imu data")
-        ("grayscale ,G", po::value<bool> (&options.grayscale) ->implicit_value(1) ->default_value(0)  , "replay Stereo Grayscale images")
-        ("color     ,C", po::value<bool> (&options.color)     ->implicit_value(1) ->default_value(0)  , "replay Stereo Color images")
-        ("viewer      ", po::value<bool> (&options.viewer)    ->implicit_value(1) ->default_value(0)  , "enable image viewer")
-        ("timestamps,T", po::value<bool> (&options.timestamps)->implicit_value(1) ->default_value(0)  , "use KITTI timestamps")
+        ("help,h"                                                                                   ,    "help message")
+        ("directory ,d",  po::value<string>(&options.path)->required()                                ,   "path to the kitti dataset Directory")
+        ("frequency ,f",  po::value<float>(&options.frequency)     ->default_value(1.0)                    ,  "set replay Frequency")
+        ("all       ,a",  po::value<bool> (&options.all_data)      ->implicit_value(1) ->default_value(0)  ,  "replay All data")
+        ("velodyne  ,v",  po::value<bool> (&options.velodyne)      ->implicit_value(1) ->default_value(0)  ,  "replay Velodyne data")
+        ("gps       ,g",  po::value<bool> (&options.gps)           ->implicit_value(1) ->default_value(0)  ,  "replay Gps data")
+        ("imu       ,i",  po::value<bool> (&options.imu)           ->implicit_value(1) ->default_value(0)  ,  "replay Imu data")
+        ("grayscale ,G",  po::value<bool> (&options.grayscale)     ->implicit_value(1) ->default_value(0)  ,  "replay Stereo Grayscale images")
+        ("color     ,C",  po::value<bool> (&options.color)         ->implicit_value(1) ->default_value(0)  ,  "replay Stereo Color images")
+        ("viewer      ",  po::value<bool> (&options.viewer)        ->implicit_value(1) ->default_value(0)  ,  "enable image viewer")
+        ("timestamps,T",  po::value<bool> (&options.timestamps)    ->implicit_value(1) ->default_value(0)  ,  "use KITTI timestamps")
+        ("sendtransform", po::value<bool> (&options.sendTransform) ->implicit_value(1) ->default_value(0)  , "publish velodyne TF IMU 3DOF orientation wrt fixed frame")
+
     ;
 
     try // parse options
@@ -382,9 +387,10 @@ int main(int argc, char **argv)
         cout << "    ├── oxts                  " << endl;
         cout << "    │   └── data              " << endl;
         cout << "    │   └ timestamps.txt      " << endl;
-        cout << "    └── velodyne_points       " << endl;
-        cout << "        └── data              " << endl;
-        cout << "         └ timestamps.txt     " << endl << endl;
+        cout << "    ├── velodyne_points       " << endl;
+        cout << "    │   └── data              " << endl;
+        cout << "    │     └ timestamps.txt    " << endl;
+        cout << "    └── calib_cam_to_cam.txt  " << endl << endl;
 
         return 1;
     }
@@ -462,9 +468,10 @@ int main(int argc, char **argv)
         cout << "    ├── oxts                  " << endl;
         cout << "    │   └── data              " << endl;
         cout << "    │   └ timestamps.txt      " << endl;
-        cout << "    └── velodyne_points       " << endl;
-        cout << "        └── data              " << endl;
-        cout << "         └ timestamps.txt     " << endl << endl;
+        cout << "    ├── velodyne_points       " << endl;
+        cout << "    │   └── data              " << endl;
+        cout << "    │     └ timestamps.txt    " << endl;
+        cout << "    └── calib_cam_to_cam.txt  " << endl << endl;
 
         return 1;
     }
@@ -874,7 +881,7 @@ int main(int argc, char **argv)
             full_filename_velodyne = dir_velodyne_points + boost::str(boost::format("%010d") % entries_played ) + ".bin";
 
             if (!options.timestamps)
-                publish_velodyne(map_pub, full_filename_velodyne,&header_support);
+                publish_velodyne(map_pub, full_filename_velodyne,&header_support,options.sendTransform);
             else
             {
                 str_support = dir_timestamp_velodyne + "timestamps.txt";
@@ -887,7 +894,7 @@ int main(int argc, char **argv)
                 timestamps.seekg(30*entries_played);
                 getline(timestamps,str_support);
                 header_support.stamp = parseTime(str_support).stamp;
-                publish_velodyne(map_pub, full_filename_velodyne,&header_support);
+                publish_velodyne(map_pub, full_filename_velodyne,&header_support,options.sendTransform);
             }
 
 
@@ -903,6 +910,7 @@ int main(int argc, char **argv)
                 if (!timestamps.is_open())
                 {
                     ROS_ERROR_STREAM("Fail to open " << timestamps);
+                    node.shutdown();
                     return 1;
                 }
                 timestamps.seekg(30*entries_played);
@@ -913,6 +921,7 @@ int main(int argc, char **argv)
             full_filename_oxts = dir_oxts + boost::str(boost::format("%010d") % entries_played ) + ".txt";
             if (!getGPS(full_filename_oxts,&ros_msgGpsFix,&header_support))
             {
+                ROS_ERROR_STREAM("Fail to open " << full_filename_oxts);
                 node.shutdown();
                 return 1;
             }
@@ -932,6 +941,7 @@ int main(int argc, char **argv)
                 if (!timestamps.is_open())
                 {
                     ROS_ERROR_STREAM("Fail to open " << timestamps);
+                    node.shutdown();
                     return 1;
                 }
                 timestamps.seekg(30*entries_played);
@@ -943,14 +953,18 @@ int main(int argc, char **argv)
             full_filename_oxts = dir_oxts + boost::str(boost::format("%010d") % entries_played ) + ".txt";
             if (!getIMU(full_filename_oxts,&ros_msgImu,&header_support))
             {
+                ROS_ERROR_STREAM("Fail to open " << full_filename_oxts);
                 node.shutdown();
                 return 1;
             }
             imu_pub.publish(ros_msgImu);
 
-            transform.setIdentity();
-            transform.setRotation(tf::Quaternion(ros_msgImu.orientation.x,ros_msgImu.orientation.y,ros_msgImu.orientation.z,ros_msgImu.orientation.w));
-            br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), ros::this_node::getName(), "imu"));
+            if (options.sendTransform)
+            {
+                transform.setIdentity();
+                transform.setRotation(tf::Quaternion(ros_msgImu.orientation.x,ros_msgImu.orientation.y,ros_msgImu.orientation.z,ros_msgImu.orientation.w));
+                br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), ros::this_node::getName(), "imu"));
+            }
         }
 
         ++progress;
