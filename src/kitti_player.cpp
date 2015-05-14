@@ -58,6 +58,8 @@
 #include <boost/lexical_cast.hpp>
 #include <string>
 
+#include "sensor_msgs/NavSatFix.h"
+#include "sensor_msgs/Imu.h"
 #include "sensor_msgs/image_encodings.h"
 #include "cv_bridge/cv_bridge.h"
 #include <opencv2/highgui/highgui.hpp>
@@ -65,6 +67,7 @@
 #include <image_transport/image_transport.h>
 #include <boost/tokenizer.hpp>
 #include <boost/progress.hpp>
+
 
 using namespace std;
 using namespace pcl;
@@ -156,116 +159,7 @@ void callback(kitti_player::kitti_playerConfig &config, uint32_t level)
     }
 
 }
-/** 
- * \brief Reads the transform from the dataset
-*/
-void read_pose()
-{
-    if (!poseFile)
-    {
-        // cout << "new" << pose_path << endl;
-        poseFile = new ifstream(pose_path.c_str());
 
-    }
-
-    if( !poseFile->good())
-    {
-        if (exitIfNotFound)
-        {
-            exitIfNotFound = true;
-        }
-        cerr << "Could not read file: " << *poseFile << endl;
-    }
-    else
-    {
-        string line;
-        getline(*poseFile, line);
-
-        cout << line << " " << *poseFile << endl;
-
-        vector<string> strs;
-        boost::split(strs, line, boost::is_any_of("\t "));
-        vector<double> values;
-
-        for ( vector<string>::iterator it=strs.begin() ; it < strs.end(); it++ )
-        {
-            double numb;
-            istringstream ( *it ) >> numb;
-            values.push_back(numb);
-            // cout << numb <<endl;
-        }
-
-        readTransform.setOrigin( tf::Vector3(values[3], values[7], values[11]) );
-        readTransform.setBasis( tf::Matrix3x3(values[0], values[1], values[2],values[4], values[5], values[6],values[8], values[9], values[10]) );
-    }
-}
-
-void publish_uncertain_pose()
-{
-    if (generateUncertain)
-    {
-        static tf::TransformBroadcaster br;
-        // publish the groundtruth
-
-        tf::Transform odometryDelta;
-        odometryDelta.mult(oldPose.inverse(),readTransform);
-        // odometryDelta.getRotation().normalize();
-        if (!odometryDelta.getOrigin().isZero())
-        {
-            if (alphaPose!=0)
-            {
-                odometryDelta.getOrigin() += odometryDelta.getOrigin()*tf::Vector3( RandGlobal::getRandomInstance().sampleNormalDistribution(alphaPose),
-                                                                                    RandGlobal::getRandomInstance().sampleNormalDistribution(alphaPose),
-                                                                                    RandGlobal::getRandomInstance().sampleNormalDistribution(alphaPose));
-            }
-            if (alphaOrientation!=0)
-            {
-                double roll, pitch, yaw;
-                odometryDelta.getBasis().getRPY(roll, pitch, yaw);
-                roll += roll * RandGlobal::getRandomInstance().sampleNormalDistribution(alphaOrientation);
-                pitch += pitch * RandGlobal::getRandomInstance().sampleNormalDistribution(alphaOrientation);
-                yaw += yaw * RandGlobal::getRandomInstance().sampleNormalDistribution(alphaOrientation);
-                odometryDelta.getBasis().setRPY(roll, pitch, yaw);
-                // odometryDelta.getRotation().normalize();
-            }
-
-            last_uncertain_pose *= odometryDelta;
-            // last_uncertain_pose.getRotation().normalize();
-        }
-
-        br.sendTransform(tf::StampedTransform(last_uncertain_pose, ros::Time::now(), camera_ref_zero_frame, camera_ref_frame));
-
-        oldPose = readTransform;
-        // printBullet(last_uncertain_pose, "last unc pos");
-        // printBullet(odometryDelta, "delta");
-    }
-}
-
-/** 
- * \brief Publish the groundtruth of the pose
-*/
-void publish_pose_groundtruth()
-{
-    if (generateGroundtruth)
-    {
-        static tf::TransformBroadcaster br;
-        // publish the groundtruth
-        br.sendTransform(tf::StampedTransform(readTransform, ros::Time::now(), camera_ref_zero_frame, gt_camera_ref_frame));
-        // printBullet(readTransform, "read transf: gt");
-
-        // print (in 1 line) the gt_camera_ref_frame  w.r.t. starting point (camera_ref_zero_frame)
-        //    printf("%f\t%f\t%f\t%f\t%f\t%f\t%f\t\n",   readTransform.getOrigin().getZ(),
-        //                                               readTransform.getOrigin().getY(),
-        //                                               readTransform.getOrigin().getX(),
-        //                                               readTransform.getRotation().getW(),
-        //                                               readTransform.getRotation().getX(),
-        //                                               readTransform.getRotation().getY(),
-        //                                               readTransform.getRotation().getZ());
-    }
-}
-/** 
- * \brief Publish the reference frames of the vehicle and the odom frames
-*/
 void publish_static_transforms()
 {
     static tf::TransformBroadcaster br;
@@ -300,9 +194,6 @@ void publish_static_transforms()
     br.sendTransform(tf::StampedTransform(transform.inverse(), ros::Time::now(), gt_camera_ref_frame, gt_robot_frame));
 }
 
-/** 
- * \brief Publish the velodyne data
-*/
 int publish_velodyne(ros::Publisher &pub, string infile)
 {
     fstream input(infile.c_str(), ios::in | ios::binary);
@@ -331,7 +222,7 @@ int publish_velodyne(ros::Publisher &pub, string infile)
         sensor_msgs::PointCloud2 pc2;
 
         //ground truth frame link
-        pc2.header.frame_id=gt_laser_frame;
+        pc2.header.frame_id= "imu" ; //ros::this_node::getName();
         pc2.header.stamp=ros::Time::now();
         points->header = pcl_conversions::toPCL(pc2.header);
         pub.publish(points);
@@ -339,7 +230,6 @@ int publish_velodyne(ros::Publisher &pub, string infile)
         return 1;
     }
 }
-
 
 int getCalibration(string dir_root, string camera_name, double* K,std::vector<double> & D,double *R,double* P){
 /*
@@ -367,7 +257,7 @@ int getCalibration(string dir_root, string camera_name, double* K,std::vector<do
     if (!file_c2c.is_open())
         return false;
 
-    ROS_INFO_STREAM("Reading camera" << camera_name << " calibration from " << calib_cam_to_cam); //TODO perché qui si entra solo due volte?
+    ROS_INFO_STREAM("Reading camera" << camera_name << " calibration from " << calib_cam_to_cam);
 
     typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
     boost::char_separator<char> sep{" "};
@@ -437,6 +327,100 @@ int getCalibration(string dir_root, string camera_name, double* K,std::vector<do
     return true;
 }
 
+int getGPS(string filename, sensor_msgs::NavSatFix *ros_msgGpsFix)
+{
+    ifstream file_oxts(filename.c_str());
+    if (!file_oxts.is_open()){
+        ROS_ERROR_STREAM("Fail to open " << filename);
+        return 0;
+    }
+
+    ROS_DEBUG_STREAM("Reading GPS data from oxts file: " << filename );
+
+    typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
+    boost::char_separator<char> sep{" "};
+
+    string line="";
+
+    getline(file_oxts,line);
+    tokenizer tok(line,sep);
+    vector<string> s(tok.begin(), tok.end());
+
+    ros_msgGpsFix->header.frame_id = ros::this_node::getName();
+    ros_msgGpsFix->header.stamp = ros::Time::now();
+    ros_msgGpsFix->header.seq = 0;
+
+    ros_msgGpsFix->latitude  = boost::lexical_cast<double>(s[0]);
+    ros_msgGpsFix->longitude = boost::lexical_cast<double>(s[1]);
+    ros_msgGpsFix->altitude  = boost::lexical_cast<double>(s[2]);
+
+    ros_msgGpsFix->position_covariance_type = sensor_msgs::NavSatFix::COVARIANCE_TYPE_APPROXIMATED;
+    for (int i=0;i<9;i++)
+        ros_msgGpsFix->position_covariance[i] = 0.0f;
+
+    ros_msgGpsFix->position_covariance[0] = boost::lexical_cast<double>(s[23]);
+    ros_msgGpsFix->position_covariance[4] = boost::lexical_cast<double>(s[23]);
+    ros_msgGpsFix->position_covariance[8] = boost::lexical_cast<double>(s[23]);
+
+    ros_msgGpsFix->status.service = sensor_msgs::NavSatStatus::SERVICE_GPS;
+    ros_msgGpsFix->status.status  = sensor_msgs::NavSatStatus::STATUS_GBAS_FIX;
+
+    return 1;
+}
+
+int getIMU(string filename, sensor_msgs::Imu *ros_msgImu){
+    ifstream file_oxts(filename.c_str());
+    if (!file_oxts.is_open())
+    {
+        ROS_ERROR_STREAM("Fail to open " << filename);
+        return 0;
+    }
+
+    ROS_DEBUG_STREAM("Reading IMU data from oxts file: " << filename );
+
+    typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
+    boost::char_separator<char> sep{" "};
+
+    vector< string > vec;
+    string line="";
+
+    getline(file_oxts,line);
+    tokenizer tok(line,sep);
+    vector<string> s(tok.begin(), tok.end());
+
+    ros_msgImu->header.frame_id = ros::this_node::getName();
+    ros_msgImu->header.stamp = ros::Time::now();
+    ros_msgImu->header.seq = 0;
+
+    //    - ax:      acceleration in x, i.e. in direction of vehicle front (m/s^2)
+    //    - ay:      acceleration in y, i.e. in direction of vehicle left (m/s^2)
+    //    - az:      acceleration in z, i.e. in direction of vehicle top (m/s^2)
+    ros_msgImu->linear_acceleration.x = boost::lexical_cast<double>(s[11]);
+    ros_msgImu->linear_acceleration.y = boost::lexical_cast<double>(s[12]);
+    ros_msgImu->linear_acceleration.z = boost::lexical_cast<double>(s[13]);
+
+    //    - vf:      forward velocity, i.e. parallel to earth-surface (m/s)
+    //    - vl:      leftward velocity, i.e. parallel to earth-surface (m/s)
+    //    - vu:      upward velocity, i.e. perpendicular to earth-surface (m/s)
+    ros_msgImu->angular_velocity.x = boost::lexical_cast<double>(s[8]);
+    ros_msgImu->angular_velocity.y = boost::lexical_cast<double>(s[9]);
+    ros_msgImu->angular_velocity.z = boost::lexical_cast<double>(s[10]);
+
+    //    - roll:    roll angle (rad),  0 = level, positive = left side up (-pi..pi)
+    //    - pitch:   pitch angle (rad), 0 = level, positive = front down (-pi/2..pi/2)
+    //    - yaw:     heading (rad),     0 = east,  positive = counter clockwise (-pi..pi)
+    tf::Quaternion q=tf::createQuaternionFromRPY(   boost::lexical_cast<double>(s[3]),
+                                                    boost::lexical_cast<double>(s[4]),
+                                                    boost::lexical_cast<double>(s[5])
+                                                    );
+    ros_msgImu->orientation.x = q.getX();
+    ros_msgImu->orientation.y = q.getY();
+    ros_msgImu->orientation.z = q.getZ();
+    ros_msgImu->orientation.w = q.getW();
+
+    return 1;
+}
+
 int main(int argc, char **argv)
 {
     kitti_player_options options;
@@ -495,7 +479,7 @@ int main(int argc, char **argv)
     }
 
     ros::init(argc, argv, "kitti_player");
-    ros::NodeHandle node;
+    ros::NodeHandle node("kittiplayer");
 
     node.param<string>("gt_laser_frame",gt_laser_frame,"/laser_frame");
 
@@ -511,7 +495,7 @@ int main(int argc, char **argv)
     string dir_image01          ;string full_filename_image01;
     string dir_image02          ;string full_filename_image02;
     string dir_image03          ;string full_filename_image03;
-    string dir_oxts             ;
+    string dir_oxts             ;string full_filename_oxts;
     string dir_velodyne_points  ;string full_filename_velodyne;
     cv::Mat cv_image00;
     cv::Mat cv_image01;
@@ -539,7 +523,15 @@ int main(int argc, char **argv)
 
     cv_bridge::CvImage cv_bridge_img;
 
-    ros::Publisher map_pub = node.advertise<pcl::PointCloud<pcl::PointXYZ> > ("/cloud_in", 1, true);
+    ros::Publisher map_pub = node.advertise<pcl::PointCloud<pcl::PointXYZ> > ("hdl64e", 1, true);
+    ros::Publisher gps_pub = node.advertise<sensor_msgs::NavSatFix>  ("oxts/gps", 1, true);
+    ros::Publisher imu_pub = node.advertise<sensor_msgs::Imu>  ("oxts/imu", 1, true);
+
+    sensor_msgs::NavSatFix ros_msgGpsFix;
+    sensor_msgs::Imu ros_msgImu;
+
+    static tf::TransformBroadcaster br;
+    tf::Transform transform;
 
 
     if (vm.count("help")) {
@@ -805,8 +797,6 @@ int main(int argc, char **argv)
 
     boost::progress_display progress(total_entries) ;
 
-    publish_static_transforms();
-
     do
     {
         if(options.color || options.all_data)
@@ -891,15 +881,39 @@ int main(int argc, char **argv)
 
         if(options.velodyne || options.all_data)
         {
-            full_filename_velodyne=dir_velodyne_points + boost::str(boost::format("%010d") % entries_played ) + ".bin";
+            full_filename_velodyne = dir_velodyne_points + boost::str(boost::format("%010d") % entries_played ) + ".bin";
             publish_velodyne(map_pub, full_filename_velodyne);
         }
 
+        if(options.gps || options.all_data)
+        {
+            full_filename_oxts = dir_oxts + boost::str(boost::format("%010d") % entries_played ) + ".txt";
+            if (!getGPS(full_filename_oxts,&ros_msgGpsFix))
+            {
+                node.shutdown();
+                return -1;
+            }
+            gps_pub.publish(ros_msgGpsFix);
+        }
+
+        if(options.imu || options.all_data)
+        {
+            full_filename_oxts = dir_oxts + boost::str(boost::format("%010d") % entries_played ) + ".txt";
+            if (!getIMU(full_filename_oxts,&ros_msgImu))
+            {
+                node.shutdown();
+                return -1;
+            }
+            imu_pub.publish(ros_msgImu);
+
+            transform.setIdentity();
+            transform.setRotation(tf::Quaternion(ros_msgImu.orientation.x,ros_msgImu.orientation.y,ros_msgImu.orientation.z,ros_msgImu.orientation.w));
+            br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), ros::this_node::getName(), "imu"));
+        }
 
         ++progress;
         entries_played++;
         loop_rate.sleep();
-        publish_static_transforms();
     }while(entries_played<=total_entries-1 && ros::ok());
 
 
@@ -916,140 +930,6 @@ int main(int argc, char **argv)
 
     ROS_INFO_STREAM("Done!");
     node.shutdown();
-
-    return -1;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    exitIfNotFound = false;
-
-    Random random;
-    RandGlobal::setRandomInstance(random);
-    last_uncertain_pose.setIdentity();
-    oldPose.setIdentity();
-
-    dynamic_reconfigure::Server<kitti_player::kitti_playerConfig> srv;
-    dynamic_reconfigure::Server<kitti_player::kitti_playerConfig>::CallbackType f;
-    f = boost::bind(&callback, _1, _2);
-    srv.setCallback(f);
-
-
-    ros::Publisher initialpose_pub = node.advertise<geometry_msgs::PoseWithCovarianceStamped>("/initialpose", 1);
-
-    path = argv[1];
-
-    string::size_type pos = path.find_last_of( "\\/" );
-    path = path.substr( 0, pos);
-
-    node.param<string>("camera_ref_zero_frame",camera_ref_zero_frame,"/camera_ref_zero_frame");
-    node.param<string>("odom_frame",odom_frame,"/odom"); //odom
-
-    node.param<string>("gt_camera_ref_frame",gt_camera_ref_frame,"/gt_camera_ref");
-
-    node.param<string>("gt_robot_frame",gt_robot_frame,"/cart_frame");
-
-    node.param<string>("camera_ref_frame",camera_ref_frame,"/BIASED_camera_ref");
-    node.param<string>("laser_frame",laser_frame,"/BIASED_laser_frame");
-    node.param<string>("robot_frame",robot_frame,"/BIASED_robot_frame");
-
-    readTransform.setIdentity();
-
-    while (ros::ok() && !exitIfNotFound)
-    {
-        stringstream ss;
-        ss << setfill('0') << setw(2) << sequence;
-
-        ss >> sequence;
-        pose_path = path+"/dataset/poses/"+sequence+".txt";
-
-        ss.clear();
-        // the number is converted to string with the help of stringstream
-        ss << setfill('0') << setw(10) << frame_count;
-        string frame;
-        ss >> frame;
-        sequence_path = path+"/dataset/2011_09_26/2011_09_26_drive_0001_sync/velodyne_points/data/"+frame+".bin";
-
-        #if defined (PRINT_CURRENT_INPUT)
-        {
-            cout << sequence_path << endl;
-            cout << pose_path << endl;
-        }
-        #endif
-
-        publish_velodyne(map_pub, sequence_path);
-
-        if (player_start && (continuous || publish))
-        {
-            read_pose();
-            if (publish)
-            {
-                publish = false;
-            }
-            ++frame_count;
-        }
-
-        // FOR GT-PRINT PURPOSES ** BEGIN **
-        #if defined (PRINT_GT_ROBOT_FRAME)
-        {
-            static tf::TransformListener listener;
-            tf::StampedTransform stamped_transform;
-            if(listener.waitForTransform (odom_frame,gt_robot_frame,ros::Time(0),ros::Duration(0.1)))
-                listener.lookupTransform(odom_frame,gt_robot_frame,ros::Time(0),stamped_transform);
-
-            printf("%s\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t\n",sequence_path.c_str(),
-                   stamped_transform.getOrigin().getX(),
-                   stamped_transform.getOrigin().getY(),
-                   stamped_transform.getOrigin().getZ(),
-                   stamped_transform.getRotation().getW(),
-                   stamped_transform.getRotation().getX(),
-                   stamped_transform.getRotation().getY(),
-                   stamped_transform.getRotation().getZ());
-        }
-        #endif
-        // FOR GT-PRINT PURPOSES ** END **
-
-
-        publish_static_transforms();
-        publish_pose_groundtruth();
-        publish_uncertain_pose();
-
-        ros::spinOnce();
-
-
-    }
-
 
     return 0;
 }
