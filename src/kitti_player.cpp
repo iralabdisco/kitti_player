@@ -80,7 +80,7 @@ struct kitti_player_options
     bool    timestamps;     // use KITTI timestamps;
 };
 
-int publish_velodyne(ros::Publisher &pub, string infile)
+int publish_velodyne(ros::Publisher &pub, string infile, std_msgs::Header *header)
 {
     fstream input(infile.c_str(), ios::in | ios::binary);
     if(!input.good())
@@ -109,7 +109,7 @@ int publish_velodyne(ros::Publisher &pub, string infile)
 
         //ground truth frame link
         pc2.header.frame_id= "imu" ; //ros::this_node::getName();
-        pc2.header.stamp=ros::Time::now();
+        pc2.header.stamp=header->stamp;
         points->header = pcl_conversions::toPCL(pc2.header);
         pub.publish(points);
 
@@ -403,6 +403,7 @@ int main(int argc, char **argv)
 
     ros::init(argc, argv, "kitti_player");
     ros::NodeHandle node("kittiplayer");
+    ros::Rate loop_rate(options.frequency);
 
     DIR *dir;
     struct dirent *ent;
@@ -415,13 +416,13 @@ int main(int argc, char **argv)
     string dir_image02          ;string full_filename_image02;   string dir_timestamp_image02;
     string dir_image03          ;string full_filename_image03;   string dir_timestamp_image03;
     string dir_oxts             ;string full_filename_oxts;      string dir_timestamp_oxts;
-    string dir_velodyne_points  ;string full_filename_velodyne;  string dir_timestamp_velodyne; //average
+    string dir_velodyne_points  ;string full_filename_velodyne;  string dir_timestamp_velodyne; //average of start&end (time of scan)
     string str_support;
     cv::Mat cv_image00;
     cv::Mat cv_image01;
     cv::Mat cv_image02;
     cv::Mat cv_image03;
-    ros::Rate loop_rate(options.frequency);
+    std_msgs::Header header_support;
 
     image_transport::ImageTransport it(node);
     image_transport::CameraPublisher pub00 = it.advertiseCamera("image00", 1);
@@ -880,9 +881,28 @@ int main(int argc, char **argv)
         }
 
         if(options.velodyne || options.all_data)
-        {
+        {            
+            header_support.stamp=ros::Time::now();
             full_filename_velodyne = dir_velodyne_points + boost::str(boost::format("%010d") % entries_played ) + ".bin";
-            publish_velodyne(map_pub, full_filename_velodyne);
+
+            if (!options.timestamps)
+                publish_velodyne(map_pub, full_filename_velodyne,&header_support);
+            else
+            {
+                str_support = dir_timestamp_velodyne + "timestamps.txt";
+                ifstream timestamps(str_support.c_str());
+                if (!timestamps.is_open())
+                {
+                    ROS_ERROR_STREAM("Fail to open " << timestamps);
+                    return 1;
+                }
+                timestamps.seekg(30*entries_played);
+                getline(timestamps,str_support);
+                header_support.stamp = parseTime(str_support).stamp;
+                publish_velodyne(map_pub, full_filename_velodyne,&header_support);
+            }
+
+
         }
 
         if(options.gps || options.all_data)
