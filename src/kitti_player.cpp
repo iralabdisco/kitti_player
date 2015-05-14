@@ -5,26 +5,15 @@
 // ###############################################################################################
 
 /*
- * This node aims to play the kitti data into ROS.
- * This repository is a catkin upgrade from the original work by Francesco Sacchi
- * see http://irawiki.disco.unimib.it/irawiki/index.php/Kitti_Player for the original versionode.
+ * KITTI_PLAYER v2.
  *
- * Porting to ROS-Hydro and other minor mods: Augusto Luis Ballardini ballardini@disco.unimib.it
+ * Augusto Luis Ballardini, ballardini@disco.unimib.it
  *
  * https://github.com/iralabdisco/kitti_player
  *
  * WARNING: this package is using some C++11
  *
  */
-
-// COMPILE-TIME CONFIGURATIONS //
-
-//#define PRINT_GT_ROBOT_FRAME 0  // if activated, you'll see the current tranform+rotation of the
-// gt_robot_frame w.r.t. odom_frame
-
-//#define PRINT_CURRENT_INPUT 1   // if activated, put on screen the current file readed
-
-// COMPILE-TIME CONFIGURATIONS //
 
 
 // ###############################################################################################
@@ -213,7 +202,7 @@ int getCalibration(string dir_root, string camera_name, double* K,std::vector<do
     return true;
 }
 
-int getGPS(string filename, sensor_msgs::NavSatFix *ros_msgGpsFix)
+int getGPS(string filename, sensor_msgs::NavSatFix *ros_msgGpsFix, std_msgs::Header *header)
 {
     ifstream file_oxts(filename.c_str());
     if (!file_oxts.is_open()){
@@ -233,7 +222,7 @@ int getGPS(string filename, sensor_msgs::NavSatFix *ros_msgGpsFix)
     vector<string> s(tok.begin(), tok.end());
 
     ros_msgGpsFix->header.frame_id = ros::this_node::getName();
-    ros_msgGpsFix->header.stamp = ros::Time::now();
+    ros_msgGpsFix->header.stamp = header->stamp;
     ros_msgGpsFix->header.seq = 0;
 
     ros_msgGpsFix->latitude  = boost::lexical_cast<double>(s[0]);
@@ -254,35 +243,8 @@ int getGPS(string filename, sensor_msgs::NavSatFix *ros_msgGpsFix)
     return 1;
 }
 
-std_msgs::Header parseTime(string timestamp)
+int getIMU(string filename, sensor_msgs::Imu *ros_msgImu, std_msgs::Header *header)
 {
-    //Epoch time conversion
-    //http://www.epochconverter.com/programming/functions-c.php
-
-    std_msgs::Header header;
-
-    typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
-
-    // example: 2011-09-26 13:21:35.134391552
-    //          01234567891111111111222222222
-    //                    0123456789012345678
-    struct tm t = {0};  // Initalize to all 0's
-    t.tm_year = boost::lexical_cast<int>(timestamp.substr(0,4)) - 1900;
-    t.tm_mon  = boost::lexical_cast<int>(timestamp.substr(5,2));
-    t.tm_mday = boost::lexical_cast<int>(timestamp.substr(8,2));
-    t.tm_hour = boost::lexical_cast<int>(timestamp.substr(11,2));
-    t.tm_min  = boost::lexical_cast<int>(timestamp.substr(14,2));
-    t.tm_sec  = boost::lexical_cast<int>(timestamp.substr(17,2));
-    t.tm_isdst = -1;
-    time_t timeSinceEpoch = mktime(&t);
-
-    header.stamp.sec  = timeSinceEpoch;
-    header.stamp.nsec = boost::lexical_cast<int>(timestamp.substr(20,8));
-
-    return header;
-}
-
-int getIMU(string filename, sensor_msgs::Imu *ros_msgImu){
     ifstream file_oxts(filename.c_str());
     if (!file_oxts.is_open())
     {
@@ -295,7 +257,6 @@ int getIMU(string filename, sensor_msgs::Imu *ros_msgImu){
     typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
     boost::char_separator<char> sep{" "};
 
-    vector< string > vec;
     string line="";
 
     getline(file_oxts,line);
@@ -303,7 +264,7 @@ int getIMU(string filename, sensor_msgs::Imu *ros_msgImu){
     vector<string> s(tok.begin(), tok.end());
 
     ros_msgImu->header.frame_id = ros::this_node::getName();
-    ros_msgImu->header.stamp = ros::Time::now();
+    ros_msgImu->header.stamp = header->stamp;
     ros_msgImu->header.seq = 0;
 
     //    - ax:      acceleration in x, i.e. in direction of vehicle front (m/s^2)
@@ -335,6 +296,33 @@ int getIMU(string filename, sensor_msgs::Imu *ros_msgImu){
     return 1;
 }
 
+std_msgs::Header parseTime(string timestamp)
+{
+    //Epoch time conversion
+    //http://www.epochconverter.com/programming/functions-c.php
+
+    std_msgs::Header header;
+
+    typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
+
+    // example: 2011-09-26 13:21:35.134391552
+    //          01234567891111111111222222222
+    //                    0123456789012345678
+    struct tm t = {0};  // Initalize to all 0's
+    t.tm_year = boost::lexical_cast<int>(timestamp.substr(0,4)) - 1900;
+    t.tm_mon  = boost::lexical_cast<int>(timestamp.substr(5,2));
+    t.tm_mday = boost::lexical_cast<int>(timestamp.substr(8,2));
+    t.tm_hour = boost::lexical_cast<int>(timestamp.substr(11,2));
+    t.tm_min  = boost::lexical_cast<int>(timestamp.substr(14,2));
+    t.tm_sec  = boost::lexical_cast<int>(timestamp.substr(17,2));
+    t.tm_isdst = -1;
+    time_t timeSinceEpoch = mktime(&t);
+
+    header.stamp.sec  = timeSinceEpoch;
+    header.stamp.nsec = boost::lexical_cast<int>(timestamp.substr(20,8));
+
+    return header;
+}
 
 
 int main(int argc, char **argv)
@@ -907,19 +895,53 @@ int main(int argc, char **argv)
 
         if(options.gps || options.all_data)
         {
+            header_support.stamp=ros::Time::now();
+            if (options.timestamps)
+            {
+                str_support = dir_timestamp_oxts + "timestamps.txt";
+                ifstream timestamps(str_support.c_str());
+                if (!timestamps.is_open())
+                {
+                    ROS_ERROR_STREAM("Fail to open " << timestamps);
+                    return 1;
+                }
+                timestamps.seekg(30*entries_played);
+                getline(timestamps,str_support);
+                header_support.stamp = parseTime(str_support).stamp;
+            }
+
             full_filename_oxts = dir_oxts + boost::str(boost::format("%010d") % entries_played ) + ".txt";
-            if (!getGPS(full_filename_oxts,&ros_msgGpsFix))
+            if (!getGPS(full_filename_oxts,&ros_msgGpsFix,&header_support))
             {
                 node.shutdown();
                 return 1;
             }
+
+
+
             gps_pub.publish(ros_msgGpsFix);
         }
 
         if(options.imu || options.all_data)
         {
+            header_support.stamp=ros::Time::now();
+            if (options.timestamps)
+            {
+                str_support = dir_timestamp_oxts + "timestamps.txt";
+                ifstream timestamps(str_support.c_str());
+                if (!timestamps.is_open())
+                {
+                    ROS_ERROR_STREAM("Fail to open " << timestamps);
+                    return 1;
+                }
+                timestamps.seekg(30*entries_played);
+                getline(timestamps,str_support);
+                header_support.stamp = parseTime(str_support).stamp;
+            }
+
+
             full_filename_oxts = dir_oxts + boost::str(boost::format("%010d") % entries_played ) + ".txt";
-            if (!getIMU(full_filename_oxts,&ros_msgImu))
+            if (!getIMU(full_filename_oxts,&ros_msgImu,&header_support))
             {
                 node.shutdown();
                 return 1;
