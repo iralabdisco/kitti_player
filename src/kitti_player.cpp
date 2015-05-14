@@ -31,43 +31,33 @@
 // ###############################################################################################
 // ###############################################################################################
 
-#include "ros/ros.h"
-#include "sensor_msgs/PointCloud2.h"
-#include "pcl_ros/point_cloud.h"
-#include "pcl/point_types.h"
+#include <ros/ros.h>
+#include <boost/algorithm/string.hpp>
+#include <boost/lexical_cast.hpp>
+#include <boost/locale.hpp>
+#include <boost/program_options.hpp>
+#include <boost/progress.hpp>
+#include <boost/tokenizer.hpp>
+#include <boost/tokenizer.hpp>
+#include <cv_bridge/cv_bridge.h>
 #include <fstream>
+#include <image_transport/image_transport.h>
 #include <iostream>
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <pcl_conversions/pcl_conversions.h>
+#include <pcl_ros/point_cloud.h>
+#include <pcl/point_types.h>
+#include <sensor_msgs/image_encodings.h>
+#include <sensor_msgs/Imu.h>
+#include <sensor_msgs/NavSatFix.h>
+#include <sensor_msgs/PointCloud2.h>
 #include <sstream>
-
-#include "tf/LinearMath/Transform.h"
+#include <string>
+#include <tf/LinearMath/Transform.h>
 #include <tf/transform_broadcaster.h>
 #include <tf/transform_listener.h>
-#include <boost/tokenizer.hpp>
-
-#include <dynamic_reconfigure/server.h>
-#include <kitti_player/kitti_playerConfig.h>
-#include <boost/algorithm/string.hpp>
-#include "Random.h"
-#include "randomUtil.h"
-#include "bulletUtil.h"
-
-#include <pcl_conversions/pcl_conversions.h>
-#include "geometry_msgs/PoseWithCovarianceStamped.h" //for initialpose
-
-#include <boost/program_options.hpp>
-#include <boost/lexical_cast.hpp>
-#include <string>
-
-#include "sensor_msgs/NavSatFix.h"
-#include "sensor_msgs/Imu.h"
-#include "sensor_msgs/image_encodings.h"
-#include "cv_bridge/cv_bridge.h"
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/core/core.hpp>
-#include <image_transport/image_transport.h>
-#include <boost/tokenizer.hpp>
-#include <boost/progress.hpp>
-
+#include <time.h>
 
 using namespace std;
 using namespace pcl;
@@ -86,8 +76,8 @@ struct kitti_player_options
     bool    imu;            // publish IMU sensor_msgs/Imu Message  message
     bool    grayscale;      // publish
     bool    color;          // publish
-    bool    viewer;
-
+    bool    viewer;         // enable CV viewer
+    bool    timestamps;     // use KITTI timestamps;
 };
 
 int publish_velodyne(ros::Publisher &pub, string infile)
@@ -264,6 +254,35 @@ int getGPS(string filename, sensor_msgs::NavSatFix *ros_msgGpsFix)
     return 1;
 }
 
+std_msgs::Header parseTime(string timestamp)
+{
+    //Epoch time conversion
+    //http://www.epochconverter.com/programming/functions-c.php
+
+    std_msgs::Header header;
+
+    typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
+
+    // example: 2011-09-26 13:21:35.134391552
+    //          01234567891111111111222222222
+    //                    0123456789012345678
+    struct tm t = {0};  // Initalize to all 0's
+    t.tm_year = boost::lexical_cast<int>(timestamp.substr(0,4)) - 1900;
+    t.tm_mon  = boost::lexical_cast<int>(timestamp.substr(5,2));
+    t.tm_mday = boost::lexical_cast<int>(timestamp.substr(8,2));
+    t.tm_hour = boost::lexical_cast<int>(timestamp.substr(11,2));
+    t.tm_min  = boost::lexical_cast<int>(timestamp.substr(14,2));
+    t.tm_sec  = boost::lexical_cast<int>(timestamp.substr(17,2));
+    t.tm_isdst = -1;
+    time_t timeSinceEpoch = mktime(&t);
+
+
+    header.stamp.sec  = timeSinceEpoch;
+    header.stamp.nsec = boost::lexical_cast<int>(timestamp.substr(20,8));
+
+    return header;
+}
+
 int getIMU(string filename, sensor_msgs::Imu *ros_msgImu){
     ifstream file_oxts(filename.c_str());
     if (!file_oxts.is_open())
@@ -317,6 +336,8 @@ int getIMU(string filename, sensor_msgs::Imu *ros_msgImu){
     return 1;
 }
 
+
+
 int main(int argc, char **argv)
 {
     kitti_player_options options;
@@ -325,18 +346,19 @@ int main(int argc, char **argv)
     po::options_description desc("Kitti_player, a player for KITTI raw datasets\nDatasets can be downloaded from: http://www.cvlibs.net/datasets/kitti/raw_data.php\n\nAllowed options:",150);
     desc.add_options()
         ("help,h"                                                                                   , "help message")
-        ("directory,d", po::value<string>(&options.path)->required()                                , "path to the kitti dataset Directory")
-        ("frequency,f", po::value<float>(&options.frequency)->default_value(1.0)                    , "set replay Frequency")
-        ("all      ,a", po::value<bool> (&options.all_data) ->implicit_value(1) ->default_value(0)  , "replay All data")
-        ("velodyne ,v", po::value<bool> (&options.velodyne) ->implicit_value(1) ->default_value(0)  , "replay Velodyne data")
-        ("gps      ,g", po::value<bool> (&options.gps)      ->implicit_value(1) ->default_value(0)  , "replay Gps data")
-        ("imu      ,i", po::value<bool> (&options.imu)      ->implicit_value(1) ->default_value(0)  , "replay Imu data")
-        ("grayscale,G", po::value<bool> (&options.grayscale)->implicit_value(1) ->default_value(0)  , "replay Stereo Grayscale images")
-        ("color    ,C", po::value<bool> (&options.color)    ->implicit_value(1) ->default_value(0)  , "replay Stereo Color images")
-        ("viewer     ", po::value<bool> (&options.viewer)   ->implicit_value(1) ->default_value(0)  , "enable image viewer")
+        ("directory ,d", po::value<string>(&options.path)->required()                                , "path to the kitti dataset Directory")
+        ("frequency ,f", po::value<float>(&options.frequency) ->default_value(1.0)                    , "set replay Frequency")
+        ("all       ,a", po::value<bool> (&options.all_data)  ->implicit_value(1) ->default_value(0)  , "replay All data")
+        ("velodyne  ,v", po::value<bool> (&options.velodyne)  ->implicit_value(1) ->default_value(0)  , "replay Velodyne data")
+        ("gps       ,g", po::value<bool> (&options.gps)       ->implicit_value(1) ->default_value(0)  , "replay Gps data")
+        ("imu       ,i", po::value<bool> (&options.imu)       ->implicit_value(1) ->default_value(0)  , "replay Imu data")
+        ("grayscale ,G", po::value<bool> (&options.grayscale) ->implicit_value(1) ->default_value(0)  , "replay Stereo Grayscale images")
+        ("color     ,C", po::value<bool> (&options.color)     ->implicit_value(1) ->default_value(0)  , "replay Stereo Color images")
+        ("viewer      ", po::value<bool> (&options.viewer)    ->implicit_value(1) ->default_value(0)  , "enable image viewer")
+        ("timestamps,T", po::value<bool> (&options.timestamps)->implicit_value(1) ->default_value(0)  , "use KITTI timestamps")
     ;
 
-    try
+    try // parse options
     {
         po::parsed_options parsed = po::command_line_parser(argc, argv).options(desc).allow_unregistered().run();
         po::store(parsed, vm);
@@ -348,7 +370,7 @@ int main(int argc, char **argv)
         {
             ROS_WARN_STREAM("Unknown Options Detected, shutting down node\n");
             cerr << desc << endl;
-            return -1;
+            return 1;
 
         }
     }
@@ -360,18 +382,24 @@ int main(int argc, char **argv)
         cout << "└── 2011_09_26_drive_0001_sync" << endl;
         cout << "    ├── image_00              " << endl;
         cout << "    │   └── data              " << endl;
+        cout << "    │   └ timestamps.txt      " << endl;
         cout << "    ├── image_01              " << endl;
         cout << "    │   └── data              " << endl;
+        cout << "    │   └ timestamps.txt      " << endl;
         cout << "    ├── image_02              " << endl;
         cout << "    │   └── data              " << endl;
+        cout << "    │   └ timestamps.txt      " << endl;
         cout << "    ├── image_03              " << endl;
         cout << "    │   └── data              " << endl;
+        cout << "    │   └ timestamps.txt      " << endl;
         cout << "    ├── oxts                  " << endl;
         cout << "    │   └── data              " << endl;
+        cout << "    │   └ timestamps.txt      " << endl;
         cout << "    └── velodyne_points       " << endl;
-        cout << "        └── data              " << endl << endl;
+        cout << "        └── data              " << endl;
+        cout << "         └ timestamps.txt     " << endl << endl;
 
-        return -1;
+        return 1;
     }
 
     ros::init(argc, argv, "kitti_player");
@@ -379,23 +407,21 @@ int main(int argc, char **argv)
 
     DIR *dir;
     struct dirent *ent;
-    std::string frames_dir;
-    std::vector<std::string> dataset_entries;
     unsigned long total_entries = 0;        //number of elements to be played
     unsigned long entries_played  = 0;      //number of elements played until now
     unsigned int len = 0;                   //counting elements support variable
     string dir_root             ;
-    string dir_image00          ;string full_filename_image00;
-    string dir_image01          ;string full_filename_image01;
-    string dir_image02          ;string full_filename_image02;
-    string dir_image03          ;string full_filename_image03;
-    string dir_oxts             ;string full_filename_oxts;
-    string dir_velodyne_points  ;string full_filename_velodyne;
+    string dir_image00          ;string full_filename_image00;   string dir_timestamp_image00;
+    string dir_image01          ;string full_filename_image01;   string dir_timestamp_image01;
+    string dir_image02          ;string full_filename_image02;   string dir_timestamp_image02;
+    string dir_image03          ;string full_filename_image03;   string dir_timestamp_image03;
+    string dir_oxts             ;string full_filename_oxts;      string dir_timestamp_oxts;
+    string dir_velodyne_points  ;string full_filename_velodyne;  string dir_timestamp_velodyne; //average
+    string str_support;
     cv::Mat cv_image00;
     cv::Mat cv_image01;
     cv::Mat cv_image02;
     cv::Mat cv_image03;
-    std::string encoding;
     ros::Rate loop_rate(options.frequency);
 
     image_transport::ImageTransport it(node);
@@ -431,20 +457,26 @@ int main(int argc, char **argv)
     if (vm.count("help")) {
         cout << desc << endl;
 
-        cout << "kitti_player needs a directory tree like the following:";
+        cout << "kitti_player needs a directory tree like the following:" << endl;
         cout << "└── 2011_09_26_drive_0001_sync" << endl;
         cout << "    ├── image_00              " << endl;
         cout << "    │   └── data              " << endl;
+        cout << "    │   └ timestamps.txt      " << endl;
         cout << "    ├── image_01              " << endl;
         cout << "    │   └── data              " << endl;
+        cout << "    │   └ timestamps.txt      " << endl;
         cout << "    ├── image_02              " << endl;
         cout << "    │   └── data              " << endl;
+        cout << "    │   └ timestamps.txt      " << endl;
         cout << "    ├── image_03              " << endl;
         cout << "    │   └── data              " << endl;
+        cout << "    │   └ timestamps.txt      " << endl;
         cout << "    ├── oxts                  " << endl;
         cout << "    │   └── data              " << endl;
+        cout << "    │   └ timestamps.txt      " << endl;
         cout << "    └── velodyne_points       " << endl;
-        cout << "        └── data              " << endl << endl; //todo add calib_cam_to_cam.txt
+        cout << "        └── data              " << endl;
+        cout << "         └ timestamps.txt     " << endl << endl;
 
         return 1;
     }
@@ -452,7 +484,7 @@ int main(int argc, char **argv)
     if (!(options.all_data || options.color || options.gps || options.grayscale || options.imu || options.velodyne))
     {
         ROS_WARN_STREAM("Job finished without playing the dataset. No 'publishing' parameters provided");
-        return 0;
+        return 1;
     }
 
     dir_root             = options.path;
@@ -462,13 +494,21 @@ int main(int argc, char **argv)
     dir_image03          = options.path;
     dir_oxts             = options.path;
     dir_velodyne_points  = options.path;
-    (*(options.path.end()-1) != '/' ? dir_root            = options.path+"/"                :       dir_root=options.path);
-    (*(options.path.end()-1) != '/' ? dir_image00         = options.path+"/image_00/data/"  :       dir_image00=options.path+"image_00/data/");
-    (*(options.path.end()-1) != '/' ? dir_image01         = options.path+"/image_01/data/"  :       dir_image01=options.path+"image_01/data/");
-    (*(options.path.end()-1) != '/' ? dir_image02         = options.path+"/image_02/data/"  :       dir_image02=options.path+"image_02/data/");
-    (*(options.path.end()-1) != '/' ? dir_image03         = options.path+"/image_03/data/"  :       dir_image03=options.path+"image_03/data/");
-    (*(options.path.end()-1) != '/' ? dir_oxts            = options.path+"/oxts/data/"      :       dir_oxts=options.path+"oxts/data/");
-    (*(options.path.end()-1) != '/' ? dir_velodyne_points = options.path+"/velodyne_points/data/" : dir_velodyne_points=options.path+"velodyne_points/data/");
+    (*(options.path.end()-1) != '/' ? dir_root            = options.path+"/"                      : dir_root            = options.path);
+    (*(options.path.end()-1) != '/' ? dir_image00         = options.path+"/image_00/data/"        : dir_image00         = options.path+"image_00/data/");
+    (*(options.path.end()-1) != '/' ? dir_image01         = options.path+"/image_01/data/"        : dir_image01         = options.path+"image_01/data/");
+    (*(options.path.end()-1) != '/' ? dir_image02         = options.path+"/image_02/data/"        : dir_image02         = options.path+"image_02/data/");
+    (*(options.path.end()-1) != '/' ? dir_image03         = options.path+"/image_03/data/"        : dir_image03         = options.path+"image_03/data/");
+    (*(options.path.end()-1) != '/' ? dir_oxts            = options.path+"/oxts/data/"            : dir_oxts            = options.path+"oxts/data/");
+    (*(options.path.end()-1) != '/' ? dir_velodyne_points = options.path+"/velodyne_points/data/" : dir_velodyne_points = options.path+"velodyne_points/data/");
+
+    (*(options.path.end()-1) != '/' ? dir_timestamp_image00    = options.path+"/image_00/"            : dir_timestamp_image00   = options.path+"image_00/");
+    (*(options.path.end()-1) != '/' ? dir_timestamp_image01    = options.path+"/image_01/"            : dir_timestamp_image01   = options.path+"image_01/");
+    (*(options.path.end()-1) != '/' ? dir_timestamp_image02    = options.path+"/image_02/"            : dir_timestamp_image02   = options.path+"image_02/");
+    (*(options.path.end()-1) != '/' ? dir_timestamp_image03    = options.path+"/image_03/"            : dir_timestamp_image03   = options.path+"image_03/");
+    (*(options.path.end()-1) != '/' ? dir_timestamp_oxts       = options.path+"/oxts/"                : dir_timestamp_oxts      = options.path+"oxts/");
+    (*(options.path.end()-1) != '/' ? dir_timestamp_velodyne   = options.path+"/velodyne_points/"     : dir_timestamp_velodyne  = options.path+"velodyne_points/");
+
 
     // Check all the directories
     if (
@@ -490,19 +530,24 @@ int main(int argc, char **argv)
             (options.gps        && (   (opendir(dir_oxts.c_str())               == NULL)))
             ||
             (options.velodyne   && (   (opendir(dir_velodyne_points.c_str())    == NULL)))
+            ||
+            (options.timestamps && (   (opendir(dir_timestamp_image00.c_str())      == NULL) ||
+                                       (opendir(dir_timestamp_image01.c_str())      == NULL) ||
+                                       (opendir(dir_timestamp_image02.c_str())      == NULL) ||
+                                       (opendir(dir_timestamp_image03.c_str())      == NULL) ||
+                                       (opendir(dir_timestamp_oxts.c_str())         == NULL) ||
+                                       (opendir(dir_timestamp_velodyne.c_str())     == NULL)))
 
         )
     {
         ROS_ERROR("Incorrect tree directory , use --help for details");
-        return -1;
+        return 1;
     }
     else
     {
         ROS_INFO_STREAM ("Checking directories...");
         ROS_INFO_STREAM (options.path << "\t[OK]");
     }
-
-
 
     //count elements in the folder
 
@@ -598,7 +643,6 @@ int main(int argc, char **argv)
         }
     }
 
-
     if(options.viewer)
     {
         ROS_INFO_STREAM("Opening CV viewer(s)");
@@ -660,7 +704,7 @@ int main(int argc, char **argv)
         {
             ROS_ERROR_STREAM("Error reading CAMERA02/CAMERA03 calibration");
             node.shutdown();
-            return -1;
+            return 1;
         }
         //Assume same height/width for the camera pair
         full_filename_image02 = dir_image02 + boost::str(boost::format("%010d") % 0 ) + ".png";
@@ -679,7 +723,7 @@ int main(int argc, char **argv)
         {
             ROS_ERROR_STREAM("Error reading CAMERA00/CAMERA01 calibration");
             node.shutdown();
-            return -1;
+            return 1;
         }
         //Assume same height/width for the camera pair
         full_filename_image00 = dir_image00 + boost::str(boost::format("%010d") % 0 ) + ".png";
@@ -706,7 +750,7 @@ int main(int argc, char **argv)
                 ROS_ERROR_STREAM("Error reading color images (02 & 03)");
                 ROS_ERROR_STREAM(full_filename_image02 << endl << full_filename_image03);
                 node.shutdown();
-                return -1;
+                return 1;
             }
 
             if(options.viewer)
@@ -717,13 +761,45 @@ int main(int argc, char **argv)
                 cv::waitKey(5);
             }
 
-            cv_bridge_img.header.stamp = ros::Time::now();
             cv_bridge_img.encoding = sensor_msgs::image_encodings::BGR8; //sensor_msgs::image_encodings::MONO8
             cv_bridge_img.header.frame_id = ros::this_node::getName();
             cv_bridge_img.header.seq = entries_played;
 
+            if (!options.timestamps)
+                cv_bridge_img.header.stamp = ros::Time::now();
+            else
+            {
+
+                str_support = dir_timestamp_image02 + "timestamps.txt";
+                ifstream timestamps(str_support.c_str());
+                if (!timestamps.is_open())
+                {
+                    ROS_ERROR_STREAM("Fail to open " << timestamps);
+                    return 1;
+                }
+                timestamps.seekg(30*entries_played);
+                getline(timestamps,str_support);
+                cv_bridge_img.header.stamp = parseTime(str_support).stamp;
+            }
             cv_bridge_img.image = cv_image02;
             cv_bridge_img.toImageMsg(ros_msg02);
+
+            if (!options.timestamps)
+                cv_bridge_img.header.stamp = ros::Time::now();
+            else
+            {
+
+                str_support = dir_timestamp_image03 + "timestamps.txt";
+                ifstream timestamps(str_support.c_str());
+                if (!timestamps.is_open())
+                {
+                    ROS_ERROR_STREAM("Fail to open " << timestamps);
+                    return 1;
+                }
+                timestamps.seekg(30*entries_played);
+                getline(timestamps,str_support);
+                cv_bridge_img.header.stamp = parseTime(str_support).stamp;
+            }
 
             cv_bridge_img.image = cv_image03;
             cv_bridge_img.toImageMsg(ros_msg03);
@@ -746,7 +822,7 @@ int main(int argc, char **argv)
                 ROS_ERROR_STREAM("Error reading color images (00 & 01)");
                 ROS_ERROR_STREAM(full_filename_image00 << endl << full_filename_image01);
                 node.shutdown();
-                return -1;
+                return 1;
             }
 
             if(options.viewer)
@@ -785,7 +861,7 @@ int main(int argc, char **argv)
             if (!getGPS(full_filename_oxts,&ros_msgGpsFix))
             {
                 node.shutdown();
-                return -1;
+                return 1;
             }
             gps_pub.publish(ros_msgGpsFix);
         }
@@ -796,7 +872,7 @@ int main(int argc, char **argv)
             if (!getIMU(full_filename_oxts,&ros_msgImu))
             {
                 node.shutdown();
-                return -1;
+                return 1;
             }
             imu_pub.publish(ros_msgImu);
 
