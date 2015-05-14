@@ -276,7 +276,6 @@ std_msgs::Header parseTime(string timestamp)
     t.tm_isdst = -1;
     time_t timeSinceEpoch = mktime(&t);
 
-
     header.stamp.sec  = timeSinceEpoch;
     header.stamp.nsec = boost::lexical_cast<int>(timestamp.substr(20,8));
 
@@ -833,14 +832,45 @@ int main(int argc, char **argv)
                 cv::waitKey(5);
             }
 
-            cv_bridge_img.header.stamp = ros::Time::now();
             cv_bridge_img.encoding = sensor_msgs::image_encodings::MONO8;
             cv_bridge_img.header.frame_id = ros::this_node::getName();
             cv_bridge_img.header.seq = entries_played;
 
+            if (!options.timestamps)
+                cv_bridge_img.header.stamp = ros::Time::now();
+            else
+            {
+
+                str_support = dir_timestamp_image02 + "timestamps.txt";
+                ifstream timestamps(str_support.c_str());
+                if (!timestamps.is_open())
+                {
+                    ROS_ERROR_STREAM("Fail to open " << timestamps);
+                    return 1;
+                }
+                timestamps.seekg(30*entries_played);
+                getline(timestamps,str_support);
+                cv_bridge_img.header.stamp = parseTime(str_support).stamp;
+            }
             cv_bridge_img.image = cv_image00;
             cv_bridge_img.toImageMsg(ros_msg00);
 
+            if (!options.timestamps)
+                cv_bridge_img.header.stamp = ros::Time::now();
+            else
+            {
+
+                str_support = dir_timestamp_image02 + "timestamps.txt";
+                ifstream timestamps(str_support.c_str());
+                if (!timestamps.is_open())
+                {
+                    ROS_ERROR_STREAM("Fail to open " << timestamps);
+                    return 1;
+                }
+                timestamps.seekg(30*entries_played);
+                getline(timestamps,str_support);
+                cv_bridge_img.header.stamp = parseTime(str_support).stamp;
+            }
             cv_bridge_img.image = cv_image01;
             cv_bridge_img.toImageMsg(ros_msg01);
 
