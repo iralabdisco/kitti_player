@@ -90,110 +90,6 @@ struct kitti_player_options
 
 };
 
-
-string path;
-string sequence_path;
-string pose_path;
-kitti_player::kitti_playerConfig myConfig;
-int frame_count = 0;
-
-tf::Transform pose;
-ifstream* poseFile = NULL;
-
-string laser_frame;
-string gt_laser_frame;
-string camera_ref_frame;
-string gt_camera_ref_frame;
-string camera_ref_zero_frame;
-string robot_frame;
-string gt_robot_frame;
-string odom_frame;
-
-tf::Transform readTransform;
-
-tf::Transform oldPose;
-tf::Transform last_uncertain_pose;
-
-bool    exitIfNotFound;
-double  alphaOrientation;
-double  alphaPose;
-bool    continuous;
-bool    generateGroundtruth;
-bool    generateUncertain;
-bool    publish;
-string  sequence;
-bool    player_start;
-ros::Rate* loop_rate;
-
-
-void callback(kitti_player::kitti_playerConfig &config, uint32_t level)
-{
-
-    if (config.sequence != atoi(sequence.c_str()) || config.start == false)
-    {
-        oldPose.setIdentity();
-        last_uncertain_pose.setIdentity();
-        frame_count = 0;
-        delete poseFile;
-        poseFile = NULL;
-
-    }
-    if (config.loop_rate != loop_rate->cycleTime().toSec())
-    {
-        delete loop_rate;
-        loop_rate = new ros::Rate(config.loop_rate);
-    }
-
-    exitIfNotFound      = config.exitIfNotFound;
-    alphaOrientation    = config.alphaOrientation;
-    alphaPose           = config.alphaPose;
-    continuous          = config.continuous;
-    generateGroundtruth = config.generateGroundtruth;
-    generateUncertain   = config.generateUncertain;
-    sequence            = boost::lexical_cast<string>(config.sequence);
-    player_start        = config.start;
-
-    if (config.publish)
-    {
-        config.publish = false;
-    }
-
-}
-
-void publish_static_transforms()
-{
-    static tf::TransformBroadcaster br;
-    tf::Transform transform,offset;
-
-    transform.setIdentity();
-    transform.setOrigin(tf::Vector3(0.76,0,1.73));
-    br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), robot_frame, laser_frame));
-    br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), gt_robot_frame, gt_laser_frame));
-
-    transform.setIdentity();
-    transform.setOrigin(tf::Vector3(1.03,0,1.65));
-
-    //  offset.setIdentity();
-    //  offset.setOrigin( tf::Vector3(10,10,0) );
-    //  transform.mult(offset,transform);
-
-    tf::Quaternion rotation;
-    tf::Quaternion rot1;
-    tf::Quaternion rot2;
-
-    rot1.setEuler(M_PI/2,0,0);
-    rot2.setEuler(0,-M_PI/2,0);
-    // rotation = rot1;
-    rotation = rot2*rot1;
-
-    transform.setRotation(rotation.normalize());
-
-
-    br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), odom_frame, camera_ref_zero_frame));
-    br.sendTransform(tf::StampedTransform(transform.inverse(), ros::Time::now(), camera_ref_frame, robot_frame));
-    br.sendTransform(tf::StampedTransform(transform.inverse(), ros::Time::now(), gt_camera_ref_frame, gt_robot_frame));
-}
-
 int publish_velodyne(ros::Publisher &pub, string infile)
 {
     fstream input(infile.c_str(), ios::in | ios::binary);
@@ -480,8 +376,6 @@ int main(int argc, char **argv)
 
     ros::init(argc, argv, "kitti_player");
     ros::NodeHandle node("kittiplayer");
-
-    node.param<string>("gt_laser_frame",gt_laser_frame,"/laser_frame");
 
     DIR *dir;
     struct dirent *ent;
