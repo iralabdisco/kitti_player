@@ -37,6 +37,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl_ros/point_cloud.h>
 #include <pcl/point_types.h>
+#include <sensor_msgs/distortion_models.h>
 #include <sensor_msgs/image_encodings.h>
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/NavSatFix.h>
@@ -130,6 +131,47 @@ int getCalibration(string dir_root, string camera_name, double* K,std::vector<do
     //    double R[9];         // Rectification Matrix
     //    double P[12];        // Projection Matrix Rectified (u,v,w) = P * R * (x,y,z,q)
 
+    //    D: []
+    //    K: [718.856, 0.0, 607.1928, 0.0, 718.856, 185.2157, 0.0, 0.0, 1.0]
+    //    R: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+    //    P: [718.856, 0.0, 607.1928, -386.1448, 0.0, 718.856, 185.2157, 0.0, 0.0, 0.0, 1.0, 0.0]
+
+    P[0]=718.856   ;
+    P[1]=0.0       ;
+    P[2]=607.1928  ;
+    P[3]=-386.1448 ;
+    P[4]=0.0       ;
+    P[5]=718.856   ;
+    P[6]=185.2157  ;
+    P[7]=0.0       ;
+    P[8]=0.0       ;
+    P[9]=0.0       ;
+    P[10]=1.0       ;
+    P[11]=0.0       ;
+
+    K[0]=718.856;
+    K[1]=0.0;
+    K[2]=607.1928;
+    K[3]=0.0;
+    K[4]=718.856;
+    K[5]=185.2157;
+    K[6]=0.0;
+    K[7]=0.0;
+    K[8]=1.0;
+
+    R[0]=1.0;
+    R[1]=0.0;
+    R[2]=0.0;
+    R[3]=0.0;
+    R[4]=1.0;
+    R[5]=0.0;
+    R[6]=0.0;
+    R[7]=0.0;
+    R[8]=1.0;
+
+    return true;
+
+
     string calib_cam_to_cam=dir_root+"calib_cam_to_cam.txt";
     ifstream file_c2c(calib_cam_to_cam.c_str());
     if (!file_c2c.is_open())
@@ -164,17 +206,17 @@ int getCalibration(string dir_root, string camera_name, double* K,std::vector<do
             }
         }
 
-        token_iterator=tok.begin();
-        if (strcmp((*token_iterator).c_str(),((string)(string("D_")+camera_name+string(":"))).c_str())==0) //Distortion Coefficients
-        {
-            index=0; //should be 5 at the end
-            ROS_DEBUG_STREAM("D_" << camera_name);
-            for (token_iterator++; token_iterator != tok.end(); token_iterator++)
-            {
-//                std::cout << *token_iterator << '\n';
-                D[index++]=boost::lexical_cast<double>(*token_iterator);
-            }
-        }
+//        token_iterator=tok.begin();
+//        if (strcmp((*token_iterator).c_str(),((string)(string("D_")+camera_name+string(":"))).c_str())==0) //Distortion Coefficients
+//        {
+//            index=0; //should be 5 at the end
+//            ROS_DEBUG_STREAM("D_" << camera_name);
+//            for (token_iterator++; token_iterator != tok.end(); token_iterator++)
+//            {
+////                std::cout << *token_iterator << '\n';
+//                D[index++]=boost::lexical_cast<double>(*token_iterator);
+//            }
+//        }
 
         token_iterator=tok.begin();
         if (strcmp((*token_iterator).c_str(),((string)(string("R_")+camera_name+string(":"))).c_str())==0) //Rectification Matrix
@@ -226,7 +268,6 @@ int getGPS(string filename, sensor_msgs::NavSatFix *ros_msgGpsFix, std_msgs::Hea
 
     ros_msgGpsFix->header.frame_id = ros::this_node::getName();
     ros_msgGpsFix->header.stamp = header->stamp;
-    ros_msgGpsFix->header.seq = 0;
 
     ros_msgGpsFix->latitude  = boost::lexical_cast<double>(s[0]);
     ros_msgGpsFix->longitude = boost::lexical_cast<double>(s[1]);
@@ -268,7 +309,6 @@ int getIMU(string filename, sensor_msgs::Imu *ros_msgImu, std_msgs::Header *head
 
     ros_msgImu->header.frame_id = ros::this_node::getName();
     ros_msgImu->header.stamp = header->stamp;
-    ros_msgImu->header.seq = 0;
 
     //    - ax:      acceleration in x, i.e. in direction of vehicle front (m/s^2)
     //    - ay:      acceleration in y, i.e. in direction of vehicle left (m/s^2)
@@ -401,8 +441,8 @@ int main(int argc, char **argv)
 
     DIR *dir;
     struct dirent *ent;
-    unsigned long total_entries = 0;        //number of elements to be played
-    unsigned long entries_played  = 0;      //number of elements played until now
+    unsigned int total_entries = 0;        //number of elements to be played
+    unsigned int entries_played  = 0;      //number of elements played until now
     unsigned int len = 0;                   //counting elements support variable
     string dir_root             ;
     string dir_image00          ;string full_filename_image00;   string dir_timestamp_image00;
@@ -419,10 +459,10 @@ int main(int argc, char **argv)
     std_msgs::Header header_support;
 
     image_transport::ImageTransport it(node);
-    image_transport::CameraPublisher pub00 = it.advertiseCamera("grayscale/left/image_raw", 1);
-    image_transport::CameraPublisher pub01 = it.advertiseCamera("grayscale/right/image_raw", 1);
-    image_transport::CameraPublisher pub02 = it.advertiseCamera("color/left/image_raw", 1);
-    image_transport::CameraPublisher pub03 = it.advertiseCamera("color/right/image_raw", 1);
+    image_transport::CameraPublisher pub00 = it.advertiseCamera("grayscale/left/image_rect", 1);
+    image_transport::CameraPublisher pub01 = it.advertiseCamera("grayscale/right/image_rect", 1);
+    image_transport::CameraPublisher pub02 = it.advertiseCamera("color/left/image_rect", 1);
+    image_transport::CameraPublisher pub03 = it.advertiseCamera("color/right/image_rect", 1);
 
     sensor_msgs::Image ros_msg00;
     sensor_msgs::Image ros_msg01;
@@ -662,33 +702,33 @@ int main(int argc, char **argv)
 
     // CAMERA INFO SECTION: read one for all
 
-    ros_cameraInfoMsg_camera00.header.seq = 0;
     ros_cameraInfoMsg_camera00.header.stamp = ros::Time::now();
     ros_cameraInfoMsg_camera00.header.frame_id = ros::this_node::getName();
     ros_cameraInfoMsg_camera00.height = 0;
     ros_cameraInfoMsg_camera00.width  = 0;
-    ros_cameraInfoMsg_camera00.D.resize(5);
+    //ros_cameraInfoMsg_camera00.D.resize(5);
+    //ros_cameraInfoMsg_camera00.distortion_model=sensor_msgs::distortion_models::PLUMB_BOB;
 
-    ros_cameraInfoMsg_camera01.header.seq = 0;
     ros_cameraInfoMsg_camera01.header.stamp = ros::Time::now();
     ros_cameraInfoMsg_camera01.header.frame_id = ros::this_node::getName();
     ros_cameraInfoMsg_camera01.height = 0;
     ros_cameraInfoMsg_camera01.width  = 0;
-    ros_cameraInfoMsg_camera01.D.resize(5);
+    //ros_cameraInfoMsg_camera01.D.resize(5);
+    //ros_cameraInfoMsg_camera00.distortion_model=sensor_msgs::distortion_models::PLUMB_BOB;
 
-    ros_cameraInfoMsg_camera02.header.seq = 0;
     ros_cameraInfoMsg_camera02.header.stamp = ros::Time::now();
     ros_cameraInfoMsg_camera02.header.frame_id = ros::this_node::getName();
     ros_cameraInfoMsg_camera02.height = 0;
     ros_cameraInfoMsg_camera02.width  = 0;
-    ros_cameraInfoMsg_camera02.D.resize(5);
+    //ros_cameraInfoMsg_camera02.D.resize(5);
+    //ros_cameraInfoMsg_camera02.distortion_model=sensor_msgs::distortion_models::PLUMB_BOB;
 
-    ros_cameraInfoMsg_camera03.header.seq = 0;
     ros_cameraInfoMsg_camera03.header.stamp = ros::Time::now();
     ros_cameraInfoMsg_camera03.header.frame_id = ros::this_node::getName();
     ros_cameraInfoMsg_camera03.height = 0;
     ros_cameraInfoMsg_camera03.width  = 0;
-    ros_cameraInfoMsg_camera03.D.resize(5);
+    //ros_cameraInfoMsg_camera03.D.resize(5);
+    //ros_cameraInfoMsg_camera03.distortion_model=sensor_msgs::distortion_models::PLUMB_BOB;
 
     if(options.color || options.all_data)
     {
@@ -758,7 +798,6 @@ int main(int argc, char **argv)
 
             cv_bridge_img.encoding = sensor_msgs::image_encodings::BGR8; //sensor_msgs::image_encodings::MONO8
             cv_bridge_img.header.frame_id = ros::this_node::getName();
-            cv_bridge_img.header.seq = entries_played;
 
             if (!options.timestamps)
             {
@@ -838,7 +877,6 @@ int main(int argc, char **argv)
 
             cv_bridge_img.encoding = sensor_msgs::image_encodings::MONO8;
             cv_bridge_img.header.frame_id = ros::this_node::getName();
-            cv_bridge_img.header.seq = entries_played;
 
             if (!options.timestamps)
             {
