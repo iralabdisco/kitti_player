@@ -843,7 +843,7 @@ int main(int argc, char **argv)
             if (!options.timestamps)
             {
                 cv_bridge_img.header.stamp = ros::Time::now();
-                ros_cameraInfoMsg_camera02.header.stamp = cv_bridge_img.header.stamp;
+                ros_msg02.header.stamp = ros_cameraInfoMsg_camera02.header.stamp = cv_bridge_img.header.stamp;
             }
             else
             {
@@ -858,7 +858,7 @@ int main(int argc, char **argv)
                 timestamps.seekg(30*entries_played);
                 getline(timestamps,str_support);
                 cv_bridge_img.header.stamp = parseTime(str_support).stamp;
-                ros_cameraInfoMsg_camera02.header.stamp = cv_bridge_img.header.stamp;
+                ros_msg02.header.stamp = ros_cameraInfoMsg_camera02.header.stamp = cv_bridge_img.header.stamp;
             }
             cv_bridge_img.image = cv_image02;
             cv_bridge_img.toImageMsg(ros_msg02);
@@ -866,7 +866,7 @@ int main(int argc, char **argv)
             if (!options.timestamps)
             {
                 cv_bridge_img.header.stamp = ros::Time::now();
-                ros_cameraInfoMsg_camera03.header.stamp = cv_bridge_img.header.stamp;
+                ros_msg03.header.stamp = ros_cameraInfoMsg_camera03.header.stamp = cv_bridge_img.header.stamp;
             }
             else
             {
@@ -881,7 +881,7 @@ int main(int argc, char **argv)
                 timestamps.seekg(30*entries_played);
                 getline(timestamps,str_support);
                 cv_bridge_img.header.stamp = parseTime(str_support).stamp;
-                ros_cameraInfoMsg_camera03.header.stamp = cv_bridge_img.header.stamp;
+                ros_msg03.header.stamp = ros_cameraInfoMsg_camera03.header.stamp = cv_bridge_img.header.stamp;
             }
 
             cv_bridge_img.image = cv_image03;
@@ -922,7 +922,7 @@ int main(int argc, char **argv)
             if (!options.timestamps)
             {
                 cv_bridge_img.header.stamp = ros::Time::now();
-                ros_cameraInfoMsg_camera00.header.stamp = cv_bridge_img.header.stamp;
+                ros_msg00.header.stamp = ros_cameraInfoMsg_camera00.header.stamp = cv_bridge_img.header.stamp;
             }
             else
             {
@@ -937,7 +937,7 @@ int main(int argc, char **argv)
                 timestamps.seekg(30*entries_played);
                 getline(timestamps,str_support);
                 cv_bridge_img.header.stamp = parseTime(str_support).stamp;
-                ros_cameraInfoMsg_camera00.header.stamp = cv_bridge_img.header.stamp;
+                ros_msg00.header.stamp = ros_cameraInfoMsg_camera00.header.stamp = cv_bridge_img.header.stamp;
             }
             cv_bridge_img.image = cv_image00;
             cv_bridge_img.toImageMsg(ros_msg00);
@@ -945,7 +945,7 @@ int main(int argc, char **argv)
             if (!options.timestamps)
             {
                 cv_bridge_img.header.stamp = ros::Time::now();
-                ros_cameraInfoMsg_camera01.header.stamp = cv_bridge_img.header.stamp;
+                ros_msg01.header.stamp = ros_cameraInfoMsg_camera01.header.stamp = cv_bridge_img.header.stamp;
             }
             else
             {
@@ -960,7 +960,7 @@ int main(int argc, char **argv)
                 timestamps.seekg(30*entries_played);
                 getline(timestamps,str_support);
                 cv_bridge_img.header.stamp = parseTime(str_support).stamp;
-                ros_cameraInfoMsg_camera01.header.stamp = cv_bridge_img.header.stamp;
+                ros_msg01.header.stamp = ros_cameraInfoMsg_camera01.header.stamp = cv_bridge_img.header.stamp;
             }
             cv_bridge_img.image = cv_image01;
             cv_bridge_img.toImageMsg(ros_msg01);

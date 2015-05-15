@@ -8,10 +8,7 @@ Panels:
         - /Status1
         - /Grid1/Offset1
         - /TF1/Frames1
-        - /PointCloud21
-        - /PointCloud21/Status1
         - /PointCloud21/Autocompute Value Bounds1
-        - /Image1
       Splitter Ratio: 0.609914
     Tree Height: 393
   - Class: rviz/Selection
@@ -99,7 +96,7 @@ Visualization Manager:
       Value: true
     - Class: rviz/Image
       Enabled: true
-      Image Topic: /kitti_player/grayscale/left/image_raw
+      Image Topic: /kitti_player/grayscale/left/image_rect
       Max Value: 1
       Median window: 5
       Min Value: 0
@@ -168,4 +165,4 @@ Window Geometry:
     collapsed: false
   Width: 1278
   X: -7
-  Y: 24
+  Y: 17
