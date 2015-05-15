@@ -335,8 +335,8 @@ int main(int argc, char **argv)
 
     po::options_description desc("Kitti_player, a player for KITTI raw datasets\nDatasets can be downloaded from: http://www.cvlibs.net/datasets/kitti/raw_data.php\n\nAllowed options",200);
     desc.add_options()
-        ("help,h"                                                                                   ,    "help message")
-        ("directory ,d",  po::value<string>(&options.path)->required()                                ,   "path to the kitti dataset Directory")
+        ("help,h"                                                                                          ,  "help message")
+        ("directory ,d",  po::value<string>(&options.path)->required()                                     ,  "*required* - path to the kitti dataset Directory")
         ("frequency ,f",  po::value<float>(&options.frequency)     ->default_value(1.0)                    ,  "set replay Frequency")
         ("all       ,a",  po::value<bool> (&options.all_data)      ->implicit_value(1) ->default_value(0)  ,  "replay All data")
         ("velodyne  ,v",  po::value<bool> (&options.velodyne)      ->implicit_value(1) ->default_value(0)  ,  "replay Velodyne data")
@@ -358,13 +358,12 @@ int main(int argc, char **argv)
 
         vector<string> to_pass_further = po::collect_unrecognized(parsed.options, po::include_positional);
 
-        if (to_pass_further.size()>0)
-        {
-            ROS_WARN_STREAM("Unknown Options Detected, shutting down node\n");
-            cerr << desc << endl;
-            return 1;
-
-        }
+//        if (to_pass_further.size()>0)
+//        {
+//            ROS_WARN_STREAM("Unknown Options Detected, shutting down node\n");
+//            cerr << desc << endl;
+//            return 1;
+//        }
     }
     catch(...)
     {
@@ -392,11 +391,12 @@ int main(int argc, char **argv)
         cout << "    │     └ timestamps.txt    " << endl;
         cout << "    └── calib_cam_to_cam.txt  " << endl << endl;
 
+        ROS_WARN_STREAM("Parse error, shutting down node\n");
         return 1;
     }
 
     ros::init(argc, argv, "kitti_player");
-    ros::NodeHandle node("kittiplayer");
+    ros::NodeHandle node("kitti_player");
     ros::Rate loop_rate(options.frequency);
 
     DIR *dir;
@@ -419,10 +419,10 @@ int main(int argc, char **argv)
     std_msgs::Header header_support;
 
     image_transport::ImageTransport it(node);
-    image_transport::CameraPublisher pub00 = it.advertiseCamera("image00", 1);
-    image_transport::CameraPublisher pub01 = it.advertiseCamera("image01", 1);
-    image_transport::CameraPublisher pub02 = it.advertiseCamera("image02", 1);
-    image_transport::CameraPublisher pub03 = it.advertiseCamera("image03", 1);
+    image_transport::CameraPublisher pub00 = it.advertiseCamera("grayscale/left/image_raw", 1);
+    image_transport::CameraPublisher pub01 = it.advertiseCamera("grayscale/right/image_raw", 1);
+    image_transport::CameraPublisher pub02 = it.advertiseCamera("color/left/image_raw", 1);
+    image_transport::CameraPublisher pub03 = it.advertiseCamera("color/right/image_raw", 1);
 
     sensor_msgs::Image ros_msg00;
     sensor_msgs::Image ros_msg01;
@@ -761,7 +761,10 @@ int main(int argc, char **argv)
             cv_bridge_img.header.seq = entries_played;
 
             if (!options.timestamps)
+            {
                 cv_bridge_img.header.stamp = ros::Time::now();
+                ros_cameraInfoMsg_camera02.header.stamp = cv_bridge_img.header.stamp;
+            }
             else
             {
 
@@ -775,12 +778,16 @@ int main(int argc, char **argv)
                 timestamps.seekg(30*entries_played);
                 getline(timestamps,str_support);
                 cv_bridge_img.header.stamp = parseTime(str_support).stamp;
+                ros_cameraInfoMsg_camera02.header.stamp = cv_bridge_img.header.stamp;
             }
             cv_bridge_img.image = cv_image02;
             cv_bridge_img.toImageMsg(ros_msg02);
 
             if (!options.timestamps)
+            {
                 cv_bridge_img.header.stamp = ros::Time::now();
+                ros_cameraInfoMsg_camera03.header.stamp = cv_bridge_img.header.stamp;
+            }
             else
             {
 
@@ -794,6 +801,7 @@ int main(int argc, char **argv)
                 timestamps.seekg(30*entries_played);
                 getline(timestamps,str_support);
                 cv_bridge_img.header.stamp = parseTime(str_support).stamp;
+                ros_cameraInfoMsg_camera03.header.stamp = cv_bridge_img.header.stamp;
             }
 
             cv_bridge_img.image = cv_image03;
@@ -833,7 +841,10 @@ int main(int argc, char **argv)
             cv_bridge_img.header.seq = entries_played;
 
             if (!options.timestamps)
+            {
                 cv_bridge_img.header.stamp = ros::Time::now();
+                ros_cameraInfoMsg_camera00.header.stamp = cv_bridge_img.header.stamp;
+            }
             else
             {
 
@@ -847,12 +858,16 @@ int main(int argc, char **argv)
                 timestamps.seekg(30*entries_played);
                 getline(timestamps,str_support);
                 cv_bridge_img.header.stamp = parseTime(str_support).stamp;
+                ros_cameraInfoMsg_camera00.header.stamp = cv_bridge_img.header.stamp;
             }
             cv_bridge_img.image = cv_image00;
             cv_bridge_img.toImageMsg(ros_msg00);
 
             if (!options.timestamps)
+            {
                 cv_bridge_img.header.stamp = ros::Time::now();
+                ros_cameraInfoMsg_camera01.header.stamp = cv_bridge_img.header.stamp;
+            }
             else
             {
 
@@ -866,6 +881,7 @@ int main(int argc, char **argv)
                 timestamps.seekg(30*entries_played);
                 getline(timestamps,str_support);
                 cv_bridge_img.header.stamp = parseTime(str_support).stamp;
+                ros_cameraInfoMsg_camera01.header.stamp = cv_bridge_img.header.stamp;
             }
             cv_bridge_img.image = cv_image01;
             cv_bridge_img.toImageMsg(ros_msg01);
