@@ -2,7 +2,6 @@
 
     <!-- The namespace where images are published -->
         <arg name="camera" default="/kitti_player/grayscale" />
-<!--    <arg name="camera" default="/kitti_stereo" />-->
 <!--    <remap from="/kitti_player/image00" to="/kitti_player/left"/>
     <remap from="/kitti_player/image01" to="/kitti_player/right"/>-->
 

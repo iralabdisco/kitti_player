@@ -131,45 +131,86 @@ int getCalibration(string dir_root, string camera_name, double* K,std::vector<do
     //    double R[9];         // Rectification Matrix
     //    double P[12];        // Projection Matrix Rectified (u,v,w) = P * R * (x,y,z,q)
 
-    //    D: []
-    //    K: [718.856, 0.0, 607.1928, 0.0, 718.856, 185.2157, 0.0, 0.0, 1.0]
-    //    R: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
-    //    P: [718.856, 0.0, 607.1928, -386.1448, 0.0, 718.856, 185.2157, 0.0, 0.0, 0.0, 1.0, 0.0]
+//    if (strcmp(camera_name.c_str(),"00"))
+//    {
+//        //    K: [718.856, 0.0, 607.1928, 0.0, 718.856, 185.2157, 0.0, 0.0, 1.0]
+//        //    R: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+//        //    P: [718.856, 0.0, 607.1928, -386.1448, 0.0, 718.856, 185.2157, 0.0, 0.0, 0.0, 1.0, 0.0]
 
-    P[0]=718.856   ;
-    P[1]=0.0       ;
-    P[2]=607.1928  ;
-    P[3]=-386.1448 ;
-    P[4]=0.0       ;
-    P[5]=718.856   ;
-    P[6]=185.2157  ;
-    P[7]=0.0       ;
-    P[8]=0.0       ;
-    P[9]=0.0       ;
-    P[10]=1.0       ;
-    P[11]=0.0       ;
+//        P[0]=718.856   ;
+//        P[1]=0.0       ;
+//        P[2]=607.1928  ;
+//        P[3]=-386.1448 ;
+//        P[4]=0.0       ;
+//        P[5]=718.856   ;
+//        P[6]=185.2157  ;
+//        P[7]=0.0       ;
+//        P[8]=0.0       ;
+//        P[9]=0.0       ;
+//        P[10]=1.0       ;
+//        P[11]=0.0       ;
 
-    K[0]=718.856;
-    K[1]=0.0;
-    K[2]=607.1928;
-    K[3]=0.0;
-    K[4]=718.856;
-    K[5]=185.2157;
-    K[6]=0.0;
-    K[7]=0.0;
-    K[8]=1.0;
+//        K[0]=718.856;
+//        K[1]=0.0;
+//        K[2]=607.1928;
+//        K[3]=0.0;
+//        K[4]=718.856;
+//        K[5]=185.2157;
+//        K[6]=0.0;
+//        K[7]=0.0;
+//        K[8]=1.0;
 
-    R[0]=1.0;
-    R[1]=0.0;
-    R[2]=0.0;
-    R[3]=0.0;
-    R[4]=1.0;
-    R[5]=0.0;
-    R[6]=0.0;
-    R[7]=0.0;
-    R[8]=1.0;
+//        R[0]=1.0;
+//        R[1]=0.0;
+//        R[2]=0.0;
+//        R[3]=0.0;
+//        R[4]=1.0;
+//        R[5]=0.0;
+//        R[6]=0.0;
+//        R[7]=0.0;
+//        R[8]=1.0;
+//    }
+//    else
+//    {
+//        //K: [718.856, 0.0, 607.1928, 0.0, 718.856, 185.2157, 0.0, 0.0, 1.0]
+//        //R: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+//        //P: [718.856, 0.0, 607.1928, 0.0, 0.0, 718.856, 185.2157, 0.0, 0.0, 0.0, 1.0, 0.0]
 
-    return true;
+//        P[0]=718.856   ;
+//        P[1]=0.0       ;
+//        P[2]=607.1928  ;
+//        P[3]=0.0 ;
+//        P[4]=0.0       ;
+//        P[5]=718.856   ;
+//        P[6]=185.2157  ;
+//        P[7]=0.0       ;
+//        P[8]=0.0       ;
+//        P[9]=0.0       ;
+//        P[10]=1.0       ;
+//        P[11]=0.0       ;
+
+//        K[0]=718.856;
+//        K[1]=0.0;
+//        K[2]=607.1928;
+//        K[3]=0.0;
+//        K[4]=718.856;
+//        K[5]=185.2157;
+//        K[6]=0.0;
+//        K[7]=0.0;
+//        K[8]=1.0;
+
+//        R[0]=1.0;
+//        R[1]=0.0;
+//        R[2]=0.0;
+//        R[3]=0.0;
+//        R[4]=1.0;
+//        R[5]=0.0;
+//        R[6]=0.0;
+//        R[7]=0.0;
+//        R[8]=1.0;
+//    }
+
+//    return true;
 
 
     string calib_cam_to_cam=dir_root+"calib_cam_to_cam.txt";
@@ -745,8 +786,8 @@ int main(int argc, char **argv)
         full_filename_image02 = dir_image02 + boost::str(boost::format("%010d") % 0 ) + ".png";
         cv_image02 = cv::imread(full_filename_image02, CV_LOAD_IMAGE_UNCHANGED);
         cv::waitKey(5);
-        ros_cameraInfoMsg_camera03.height = ros_cameraInfoMsg_camera02.height = cv_image02.rows;
-        ros_cameraInfoMsg_camera03.width  = ros_cameraInfoMsg_camera02.width  = cv_image02.cols;
+        ros_cameraInfoMsg_camera03.height = ros_cameraInfoMsg_camera02.height = cv_image02.rows;// -1;TODO: CHECK, qui potrebbe essere -1
+        ros_cameraInfoMsg_camera03.width  = ros_cameraInfoMsg_camera02.width  = cv_image02.cols;// -1;
     }
 
     if(options.grayscale || options.all_data)
@@ -764,8 +805,8 @@ int main(int argc, char **argv)
         full_filename_image00 = dir_image00 + boost::str(boost::format("%010d") % 0 ) + ".png";
         cv_image00 = cv::imread(full_filename_image00, CV_LOAD_IMAGE_UNCHANGED);
         cv::waitKey(5);
-        ros_cameraInfoMsg_camera01.height = ros_cameraInfoMsg_camera00.height = cv_image00.rows;
-        ros_cameraInfoMsg_camera01.width  = ros_cameraInfoMsg_camera00.width  = cv_image00.cols;
+        ros_cameraInfoMsg_camera01.height = ros_cameraInfoMsg_camera00.height = cv_image00.rows;// -1; TODO: CHECK, qui potrebbe essere -1
+        ros_cameraInfoMsg_camera01.width  = ros_cameraInfoMsg_camera00.width  = cv_image00.cols;// -1;
     }
 
     boost::progress_display progress(total_entries) ;
