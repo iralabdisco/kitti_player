@@ -13,22 +13,20 @@
             args= "-d /home/ballardini/catkin_ws/src/kitti_player/dataset/2011_09_26/2011_09_26_drive_0027_sync/ -f 3 -a 1"
             />
 
+    <!--rosrun image_view stereo_view stereo:=/kitti_player/grayscale image:=image_rect _approximate_sync:=True-->
     <group ns="$(arg camera)" >
-            <node   pkg="stereo_image_proc" type="stereo_image_proc" name="stereo_image_proc"
-                    output="screen"
-                    required="true">
+            <node   pkg="stereo_image_proc" type="stereo_image_proc" name="stereo_image_proc" required="true">
                     <param name="approximate_sync" value="true"/>
             </node>
     </group>
 
     <!-- Run the viso2_ros package -->
-<!--    <node pkg="viso2_ros" type="stereo_odometer" name="stereo_odometer" output="screen" required="true">
-            <rosparam param="base_link_frame_id">visual_odometry_camera_frame</rosparam>
+    <node pkg="viso2_ros" type="stereo_odometer" name="stereo_odometer" output="screen" required="true">
+            <rosparam param="base_link_frame_id">kitti_player</rosparam>
             <remap from="stereo" to="$(arg camera)"/>
-            <remap from="image" to="image_raw"/>
-    </node>-->
+            <remap from="image" to="image_rect"/>
+    </node>
 
-<!--    <remap from="image" to="image_rect"/>-->
 
     <!-- Launch RViz-->
     <arg  name="rviz" default="$(find kitti_player)/cfg/rviz_kitti_player.rviz" />

@@ -837,7 +837,7 @@ int main(int argc, char **argv)
                 cv::waitKey(5);
             }
 
-            cv_bridge_img.encoding = sensor_msgs::image_encodings::BGR8; //sensor_msgs::image_encodings::MONO8
+            cv_bridge_img.encoding = sensor_msgs::image_encodings::BGR8;
             cv_bridge_img.header.frame_id = ros::this_node::getName();
 
             if (!options.timestamps)
