@@ -4,7 +4,7 @@
         <arg name="camera" default="/kitti_player/grayscale" />
 
     <arg    name="directory"
-            default="/home/ballardini/catkin_ws/src/kitti_player/dataset/2011_09_26/2011_09_26_drive_0001_sync/"
+            default="$(find kitti_player)/dataset/2011_10_03/2011_10_03_drive_0042_sync/"
             />
 
     <node   name="kitti_player" pkg="kitti_player" type="kitti_player"
