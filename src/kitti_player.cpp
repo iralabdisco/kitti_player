@@ -15,7 +15,6 @@
  *
  */
 
-
 // ###############################################################################################
 // ###############################################################################################
 // ###############################################################################################
@@ -128,88 +127,6 @@ int getCalibration(string dir_root, string camera_name, double* K,std::vector<do
     //    double R[9];         // Rectification Matrix
     //    double P[12];        // Projection Matrix Rectified (u,v,w) = P * R * (x,y,z,q)
 
-//    if (strcmp(camera_name.c_str(),"00"))
-//    {
-//        //    K: [718.856, 0.0, 607.1928, 0.0, 718.856, 185.2157, 0.0, 0.0, 1.0]
-//        //    R: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
-//        //    P: [718.856, 0.0, 607.1928, -386.1448, 0.0, 718.856, 185.2157, 0.0, 0.0, 0.0, 1.0, 0.0]
-
-//        P[0]=718.856   ;
-//        P[1]=0.0       ;
-//        P[2]=607.1928  ;
-//        P[3]=-386.1448 ;
-//        P[4]=0.0       ;
-//        P[5]=718.856   ;
-//        P[6]=185.2157  ;
-//        P[7]=0.0       ;
-//        P[8]=0.0       ;
-//        P[9]=0.0       ;
-//        P[10]=1.0       ;
-//        P[11]=0.0       ;
-
-//        K[0]=718.856;
-//        K[1]=0.0;
-//        K[2]=607.1928;
-//        K[3]=0.0;
-//        K[4]=718.856;
-//        K[5]=185.2157;
-//        K[6]=0.0;
-//        K[7]=0.0;
-//        K[8]=1.0;
-
-//        R[0]=1.0;
-//        R[1]=0.0;
-//        R[2]=0.0;
-//        R[3]=0.0;
-//        R[4]=1.0;
-//        R[5]=0.0;
-//        R[6]=0.0;
-//        R[7]=0.0;
-//        R[8]=1.0;
-//    }
-//    else
-//    {
-//        //K: [718.856, 0.0, 607.1928, 0.0, 718.856, 185.2157, 0.0, 0.0, 1.0]
-//        //R: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
-//        //P: [718.856, 0.0, 607.1928, 0.0, 0.0, 718.856, 185.2157, 0.0, 0.0, 0.0, 1.0, 0.0]
-
-//        P[0]=718.856   ;
-//        P[1]=0.0       ;
-//        P[2]=607.1928  ;
-//        P[3]=0.0 ;
-//        P[4]=0.0       ;
-//        P[5]=718.856   ;
-//        P[6]=185.2157  ;
-//        P[7]=0.0       ;
-//        P[8]=0.0       ;
-//        P[9]=0.0       ;
-//        P[10]=1.0       ;
-//        P[11]=0.0       ;
-
-//        K[0]=718.856;
-//        K[1]=0.0;
-//        K[2]=607.1928;
-//        K[3]=0.0;
-//        K[4]=718.856;
-//        K[5]=185.2157;
-//        K[6]=0.0;
-//        K[7]=0.0;
-//        K[8]=1.0;
-
-//        R[0]=1.0;
-//        R[1]=0.0;
-//        R[2]=0.0;
-//        R[3]=0.0;
-//        R[4]=1.0;
-//        R[5]=0.0;
-//        R[6]=0.0;
-//        R[7]=0.0;
-//        R[8]=1.0;
-//    }
-
-//    return true;
-
-
     string calib_cam_to_cam=dir_root+"calib_cam_to_cam.txt";
     ifstream file_c2c(calib_cam_to_cam.c_str());
     if (!file_c2c.is_open())
@@ -220,7 +137,6 @@ int getCalibration(string dir_root, string camera_name, double* K,std::vector<do
     typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
     boost::char_separator<char> sep{" "};
 
-    vector< string > vec;
     string line="";
     char index=0;
     tokenizer::iterator token_iterator;
@@ -231,7 +147,6 @@ int getCalibration(string dir_root, string camera_name, double* K,std::vector<do
         tokenizer tok(line,sep);
 
         // Move the iterator at the beginning of the tokenize vector and check for K/D/R/P matrices.
-
         token_iterator=tok.begin();
         if (strcmp((*token_iterator).c_str(),((string)(string("K_")+camera_name+string(":"))).c_str())==0) //Calibration Matrix
         {
@@ -239,22 +154,24 @@ int getCalibration(string dir_root, string camera_name, double* K,std::vector<do
             ROS_DEBUG_STREAM("K_" << camera_name);
             for (token_iterator++; token_iterator != tok.end(); token_iterator++)
             {
-//                std::cout << *token_iterator << '\n';
+                //std::cout << *token_iterator << '\n';
                 K[index++]=boost::lexical_cast<double>(*token_iterator);
             }
         }
 
-//        token_iterator=tok.begin();
-//        if (strcmp((*token_iterator).c_str(),((string)(string("D_")+camera_name+string(":"))).c_str())==0) //Distortion Coefficients
-//        {
-//            index=0; //should be 5 at the end
-//            ROS_DEBUG_STREAM("D_" << camera_name);
-//            for (token_iterator++; token_iterator != tok.end(); token_iterator++)
-//            {
-////                std::cout << *token_iterator << '\n';
-//                D[index++]=boost::lexical_cast<double>(*token_iterator);
-//            }
-//        }
+        // EXPERIMENTAL: use with unrectified images
+
+        //        token_iterator=tok.begin();
+        //        if (strcmp((*token_iterator).c_str(),((string)(string("D_")+camera_name+string(":"))).c_str())==0) //Distortion Coefficients
+        //        {
+        //            index=0; //should be 5 at the end
+        //            ROS_DEBUG_STREAM("D_" << camera_name);
+        //            for (token_iterator++; token_iterator != tok.end(); token_iterator++)
+        //            {
+        ////                std::cout << *token_iterator << '\n';
+        //                D[index++]=boost::lexical_cast<double>(*token_iterator);
+        //            }
+        //        }
 
         token_iterator=tok.begin();
         if (strcmp((*token_iterator).c_str(),((string)(string("R_")+camera_name+string(":"))).c_str())==0) //Rectification Matrix
@@ -263,7 +180,7 @@ int getCalibration(string dir_root, string camera_name, double* K,std::vector<do
             ROS_DEBUG_STREAM("R_" << camera_name);
             for (token_iterator++; token_iterator != tok.end(); token_iterator++)
             {
-//                std::cout << *token_iterator << '\n';
+                //std::cout << *token_iterator << '\n';
                 R[index++]=boost::lexical_cast<double>(*token_iterator);
             }
         }
@@ -275,7 +192,7 @@ int getCalibration(string dir_root, string camera_name, double* K,std::vector<do
             ROS_DEBUG_STREAM("P_rect_" << camera_name);
             for (token_iterator++; token_iterator != tok.end(); token_iterator++)
             {
-//                std::cout << *token_iterator << '\n';
+                //std::cout << *token_iterator << '\n';
                 P[index++]=boost::lexical_cast<double>(*token_iterator);
             }
         }
@@ -434,12 +351,12 @@ int main(int argc, char **argv)
 
         vector<string> to_pass_further = po::collect_unrecognized(parsed.options, po::include_positional);
 
-//        if (to_pass_further.size()>0)
-//        {
-//            ROS_WARN_STREAM("Unknown Options Detected, shutting down node\n");
-//            cerr << desc << endl;
-//            return 1;
-//        }
+        if (to_pass_further.size()>0)
+        {
+            ROS_WARN_STREAM("Unknown Options Detected, shutting down node\n");
+            cerr << desc << endl;
+            return 1;
+        }
     }
     catch(...)
     {
@@ -796,7 +713,7 @@ int main(int argc, char **argv)
         full_filename_image00 = dir_image00 + boost::str(boost::format("%010d") % 0 ) + ".png";
         cv_image00 = cv::imread(full_filename_image00, CV_LOAD_IMAGE_UNCHANGED);
         cv::waitKey(5);
-        ros_cameraInfoMsg_camera01.height = ros_cameraInfoMsg_camera00.height = cv_image00.rows;// -1; TODO: CHECK, qui potrebbe essere -1
+        ros_cameraInfoMsg_camera01.height = ros_cameraInfoMsg_camera00.height = cv_image00.rows;// -1; TODO: CHECK -1?
         ros_cameraInfoMsg_camera01.width  = ros_cameraInfoMsg_camera00.width  = cv_image00.cols;// -1;
     }
 

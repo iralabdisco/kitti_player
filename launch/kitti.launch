@@ -1,7 +1,0 @@
-<launch>
-	<node name="kitti_player" pkg="kitti_player" type="kitti_player" output = "screen"/>
-	
-	<node name="rviz" pkg="rviz" type="rviz" />
-	<node name="reconfigure_gui" pkg="dynamic_reconfigure" type="reconfigure_gui" />
-
-</launch>

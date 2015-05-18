@@ -1,15 +1,14 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(kitti_player)
 
-SET (CMAKE_BUILD_TYPE Debug)
-SET (CMAKE_CXX_FLAGS "-O0 -std=c++11")
+SET (CMAKE_BUILD_TYPE Release)
+SET (CMAKE_CXX_FLAGS "-O3 -std=c++11")
 
 find_package(catkin REQUIRED COMPONENTS
                     roscpp
                     tf
                     tf2
                     std_msgs
-                    dynamic_reconfigure
                     pcl_ros
                     geometry_msgs
                     cv_bridge
@@ -31,10 +30,7 @@ include_directories(
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 
-set (PRINT_GT_ROBOT_FRAME 0)
-set (PRINT_CURRENT_INPUT 1)
 
-
-add_executable(kitti_player src/Random.cpp src/randomUtil.cpp src/bulletUtil.cpp src/kitti_player.cpp)
+add_executable(kitti_player src/kitti_player.cpp)
 
 target_link_libraries(kitti_player ${catkin_LIBRARIES} ${PCL_LIBRARIES})
