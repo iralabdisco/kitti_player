@@ -4,13 +4,13 @@
         <arg name="camera" default="/kitti_player/grayscale" />
 
     <arg    name="directory"
-            default="/home/ballardini/catkin_ws/src/kitti_player/dataset/2011_09_26/2011_09_26_drive_0027_sync/"
+            default="/home/ballardini/catkin_ws/src/kitti_player/dataset/2011_09_26/2011_09_26_drive_0001_sync/"
             />
 
     <node   name="kitti_player" pkg="kitti_player" type="kitti_player"
             output = "screen"
             required="true"
-            args= "-d /home/ballardini/catkin_ws/src/kitti_player/dataset/2011_09_26/2011_09_26_drive_0027_sync/ -f 3 -a 1"
+            args= "-d $(arg directory) -f 4 -a 1"
             />
 
     <!--rosrun image_view stereo_view stereo:=/kitti_player/grayscale image:=image_rect _approximate_sync:=True-->
@@ -20,13 +20,14 @@
             </node>
     </group>
 
+    <node pkg="tf" type="static_transform_publisher" name="visual_odometry_camera_frame_to_visual_odometry_car_frame"
+          args="0 0 0 -1.570796 0 -1.570796 base_link kitti_player 50" />
+
     <!-- Run the viso2_ros package -->
-    <node pkg="viso2_ros" type="stereo_odometer" name="stereo_odometer" output="screen" required="true">
-            <rosparam param="base_link_frame_id">kitti_player</rosparam>
+    <node pkg="viso2_ros" type="stereo_odometer" name="stereo_odometer" required="true">
             <remap from="stereo" to="$(arg camera)"/>
             <remap from="image" to="image_rect"/>
     </node>
-
 
     <!-- Launch RViz-->
     <arg  name="rviz" default="$(find kitti_player)/cfg/rviz_kitti_player.rviz" />

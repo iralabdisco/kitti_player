@@ -71,7 +71,7 @@ struct kitti_player_options
     bool    sendTransform;  // publish velodyne TF IMU 3DOF orientation wrt fixed frame
 };
 
-int publish_velodyne(ros::Publisher &pub, string infile, std_msgs::Header *header,bool sendtransform)
+int publish_velodyne(ros::Publisher &pub, string infile, std_msgs::Header *header)
 {
     fstream input(infile.c_str(), ios::in | ios::binary);
     if(!input.good())
@@ -98,10 +98,7 @@ int publish_velodyne(ros::Publisher &pub, string infile, std_msgs::Header *heade
         //workaround for the PCL headers... http://wiki.ros.org/hydro/Migration#PCL
         sensor_msgs::PointCloud2 pc2;
 
-        if (sendtransform)
-            pc2.header.frame_id= "imu" ;
-        else
-            pc2.header.frame_id= ros::this_node::getName();
+        pc2.header.frame_id= "base_link"; //ros::this_node::getName();
         pc2.header.stamp=header->stamp;
         points->header = pcl_conversions::toPCL(pc2.header);
         pub.publish(points);
@@ -427,8 +424,6 @@ int main(int argc, char **argv)
         ("color     ,C",  po::value<bool> (&options.color)         ->implicit_value(1) ->default_value(0)  ,  "replay Stereo Color images")
         ("viewer      ",  po::value<bool> (&options.viewer)        ->implicit_value(1) ->default_value(0)  ,  "enable image viewer")
         ("timestamps,T",  po::value<bool> (&options.timestamps)    ->implicit_value(1) ->default_value(0)  ,  "use KITTI timestamps")
-        ("sendtransform", po::value<bool> (&options.sendTransform) ->implicit_value(1) ->default_value(0)  , "publish velodyne TF IMU 3DOF orientation wrt fixed frame")
-
     ;
 
     try // parse options
@@ -524,10 +519,6 @@ int main(int argc, char **argv)
 
     sensor_msgs::NavSatFix ros_msgGpsFix;
     sensor_msgs::Imu ros_msgImu;
-
-    static tf::TransformBroadcaster br;
-    tf::Transform transform;
-
 
     if (vm.count("help")) {
         cout << desc << endl;
@@ -813,6 +804,9 @@ int main(int argc, char **argv)
 
     do
     {
+        // single timestamp for all published stuff
+        Time current_timestamp=ros::Time::now();
+
         if(options.color || options.all_data)
         {
             full_filename_image02 = dir_image02 + boost::str(boost::format("%010d") % entries_played ) + ".png";
@@ -842,7 +836,7 @@ int main(int argc, char **argv)
 
             if (!options.timestamps)
             {
-                cv_bridge_img.header.stamp = ros::Time::now();
+                cv_bridge_img.header.stamp = current_timestamp ;
                 ros_msg02.header.stamp = ros_cameraInfoMsg_camera02.header.stamp = cv_bridge_img.header.stamp;
             }
             else
@@ -865,7 +859,7 @@ int main(int argc, char **argv)
 
             if (!options.timestamps)
             {
-                cv_bridge_img.header.stamp = ros::Time::now();
+                cv_bridge_img.header.stamp = current_timestamp;
                 ros_msg03.header.stamp = ros_cameraInfoMsg_camera03.header.stamp = cv_bridge_img.header.stamp;
             }
             else
@@ -921,7 +915,7 @@ int main(int argc, char **argv)
 
             if (!options.timestamps)
             {
-                cv_bridge_img.header.stamp = ros::Time::now();
+                cv_bridge_img.header.stamp = current_timestamp;
                 ros_msg00.header.stamp = ros_cameraInfoMsg_camera00.header.stamp = cv_bridge_img.header.stamp;
             }
             else
@@ -944,7 +938,7 @@ int main(int argc, char **argv)
 
             if (!options.timestamps)
             {
-                cv_bridge_img.header.stamp = ros::Time::now();
+                cv_bridge_img.header.stamp = current_timestamp;
                 ros_msg01.header.stamp = ros_cameraInfoMsg_camera01.header.stamp = cv_bridge_img.header.stamp;
             }
             else
@@ -972,11 +966,11 @@ int main(int argc, char **argv)
 
         if(options.velodyne || options.all_data)
         {            
-            header_support.stamp=ros::Time::now();
+            header_support.stamp = current_timestamp;
             full_filename_velodyne = dir_velodyne_points + boost::str(boost::format("%010d") % entries_played ) + ".bin";
 
             if (!options.timestamps)
-                publish_velodyne(map_pub, full_filename_velodyne,&header_support,options.sendTransform);
+                publish_velodyne(map_pub, full_filename_velodyne,&header_support);
             else
             {
                 str_support = dir_timestamp_velodyne + "timestamps.txt";
@@ -989,7 +983,7 @@ int main(int argc, char **argv)
                 timestamps.seekg(30*entries_played);
                 getline(timestamps,str_support);
                 header_support.stamp = parseTime(str_support).stamp;
-                publish_velodyne(map_pub, full_filename_velodyne,&header_support,options.sendTransform);
+                publish_velodyne(map_pub, full_filename_velodyne,&header_support);
             }
 
 
@@ -997,7 +991,7 @@ int main(int argc, char **argv)
 
         if(options.gps || options.all_data)
         {
-            header_support.stamp=ros::Time::now();
+            header_support.stamp = current_timestamp; //ros::Time::now();
             if (options.timestamps)
             {
                 str_support = dir_timestamp_oxts + "timestamps.txt";
@@ -1028,7 +1022,7 @@ int main(int argc, char **argv)
 
         if(options.imu || options.all_data)
         {
-            header_support.stamp=ros::Time::now();
+            header_support.stamp = current_timestamp; //ros::Time::now();
             if (options.timestamps)
             {
                 str_support = dir_timestamp_oxts + "timestamps.txt";
@@ -1054,12 +1048,6 @@ int main(int argc, char **argv)
             }
             imu_pub.publish(ros_msgImu);
 
-            if (options.sendTransform)
-            {
-                transform.setIdentity();
-                transform.setRotation(tf::Quaternion(ros_msgImu.orientation.x,ros_msgImu.orientation.y,ros_msgImu.orientation.z,ros_msgImu.orientation.w));
-                br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), ros::this_node::getName(), "imu"));
-            }
         }
 
         ++progress;
