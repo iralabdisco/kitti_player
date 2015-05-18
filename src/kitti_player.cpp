@@ -351,12 +351,13 @@ int main(int argc, char **argv)
 
         vector<string> to_pass_further = po::collect_unrecognized(parsed.options, po::include_positional);
 
-        if (to_pass_further.size()>0)
-        {
-            ROS_WARN_STREAM("Unknown Options Detected, shutting down node\n");
-            cerr << desc << endl;
-            return 1;
-        }
+        // Can't handle __ros (ROS parameters ... )
+        //        if (to_pass_further.size()>0)
+        //        {
+        //            ROS_WARN_STREAM("Unknown Options Detected, shutting down node\n");
+        //            cerr << desc << endl;
+        //            return 1;
+        //        }
     }
     catch(...)
     {
