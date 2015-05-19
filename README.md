@@ -1,1 +1,1 @@
-This node aims to play the kitti data into ROS. This repository is a catkin upgrade from the original work by Francesco Sacchi (see http://irawiki.disco.unimib.it/irawiki/index.php/Kitti_Player for the original version).
+From version 2, this node aims to play the whole kitti data into ROS (Color/Grayscale images, Velodyne scan as PCL, sensor_msgs/Imu Message, GPS as sensor_msgs/NavSatFix Message). 
