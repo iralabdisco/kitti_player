@@ -41,6 +41,7 @@
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/NavSatFix.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <stereo_msgs/DisparityImage.h>
 #include <sstream>
 #include <string>
 #include <tf/LinearMath/Transform.h>
@@ -68,6 +69,7 @@ struct kitti_player_options
     bool    viewer;         // enable CV viewer
     bool    timestamps;     // use KITTI timestamps;
     bool    sendTransform;  // publish velodyne TF IMU 3DOF orientation wrt fixed frame
+    bool    stereoDisp;     // use precalculated stereoDisparities
 };
 
 int publish_velodyne(ros::Publisher &pub, string infile, std_msgs::Header *header)
@@ -341,6 +343,7 @@ int main(int argc, char **argv)
         ("color     ,C",  po::value<bool> (&options.color)         ->implicit_value(1) ->default_value(0)  ,  "replay Stereo Color images")
         ("viewer      ",  po::value<bool> (&options.viewer)        ->implicit_value(1) ->default_value(0)  ,  "enable image viewer")
         ("timestamps,T",  po::value<bool> (&options.timestamps)    ->implicit_value(1) ->default_value(0)  ,  "use KITTI timestamps")
+        ("stereoDisp,s",  po::value<bool> (&options.stereoDisp)    ->implicit_value(1) ->default_value(0)  ,  "use pre-calculated disparities")
     ;
 
     try // parse options
@@ -403,6 +406,7 @@ int main(int argc, char **argv)
     string dir_image01          ;string full_filename_image01;   string dir_timestamp_image01;
     string dir_image02          ;string full_filename_image02;   string dir_timestamp_image02;
     string dir_image03          ;string full_filename_image03;   string dir_timestamp_image03;
+    string dir_image04          ;string full_filename_image04;
     string dir_oxts             ;string full_filename_oxts;      string dir_timestamp_oxts;
     string dir_velodyne_points  ;string full_filename_velodyne;  string dir_timestamp_velodyne; //average of start&end (time of scan)
     string str_support;
@@ -410,6 +414,7 @@ int main(int argc, char **argv)
     cv::Mat cv_image01;
     cv::Mat cv_image02;
     cv::Mat cv_image03;
+    cv::Mat cv_image04;
     std_msgs::Header header_support;
 
     image_transport::ImageTransport it(node);
@@ -423,6 +428,8 @@ int main(int argc, char **argv)
     sensor_msgs::Image ros_msg02;
     sensor_msgs::Image ros_msg03;
 
+
+
 //    sensor_msgs::CameraInfo ros_cameraInfoMsg;
     sensor_msgs::CameraInfo ros_cameraInfoMsg_camera00;
     sensor_msgs::CameraInfo ros_cameraInfoMsg_camera01;
@@ -431,9 +438,10 @@ int main(int argc, char **argv)
 
     cv_bridge::CvImage cv_bridge_img;
 
-    ros::Publisher map_pub = node.advertise<pcl::PointCloud<pcl::PointXYZ> > ("hdl64e", 1, true);
-    ros::Publisher gps_pub = node.advertise<sensor_msgs::NavSatFix>  ("oxts/gps", 1, true);
-    ros::Publisher imu_pub = node.advertise<sensor_msgs::Imu>  ("oxts/imu", 1, true);
+    ros::Publisher map_pub  = node.advertise<pcl::PointCloud<pcl::PointXYZ> > ("hdl64e", 1, true);
+    ros::Publisher gps_pub  = node.advertise<sensor_msgs::NavSatFix>  ("oxts/gps", 1, true);
+    ros::Publisher imu_pub  = node.advertise<sensor_msgs::Imu>  ("oxts/imu", 1, true);
+    ros::Publisher disp_pub = node.advertise<stereo_msgs::DisparityImage>("preprocessed_disparity",1,true);
 
     sensor_msgs::NavSatFix ros_msgGpsFix;
     sensor_msgs::Imu ros_msgImu;
@@ -477,6 +485,7 @@ int main(int argc, char **argv)
     dir_image01          = options.path;
     dir_image02          = options.path;
     dir_image03          = options.path;
+    dir_image04          = options.path;
     dir_oxts             = options.path;
     dir_velodyne_points  = options.path;
     (*(options.path.end()-1) != '/' ? dir_root            = options.path+"/"                      : dir_root            = options.path);
@@ -484,6 +493,7 @@ int main(int argc, char **argv)
     (*(options.path.end()-1) != '/' ? dir_image01         = options.path+"/image_01/data/"        : dir_image01         = options.path+"image_01/data/");
     (*(options.path.end()-1) != '/' ? dir_image02         = options.path+"/image_02/data/"        : dir_image02         = options.path+"image_02/data/");
     (*(options.path.end()-1) != '/' ? dir_image03         = options.path+"/image_03/data/"        : dir_image03         = options.path+"image_03/data/");
+    (*(options.path.end()-1) != '/' ? dir_image04         = options.path+"/disparities/"          : dir_image04         = options.path+"disparities/");
     (*(options.path.end()-1) != '/' ? dir_oxts            = options.path+"/oxts/data/"            : dir_oxts            = options.path+"oxts/data/");
     (*(options.path.end()-1) != '/' ? dir_velodyne_points = options.path+"/velodyne_points/data/" : dir_velodyne_points = options.path+"velodyne_points/data/");
 
@@ -500,7 +510,7 @@ int main(int argc, char **argv)
             (options.all_data   && (   (opendir(dir_image00.c_str())            == NULL) ||
                                        (opendir(dir_image01.c_str())            == NULL) ||
                                        (opendir(dir_image02.c_str())            == NULL) ||
-                                       (opendir(dir_image03.c_str())            == NULL) ||
+                                       (opendir(dir_image03.c_str())            == NULL) ||                                       
                                        (opendir(dir_oxts.c_str())               == NULL) ||
                                        (opendir(dir_velodyne_points.c_str())    == NULL)))
             ||
@@ -513,6 +523,8 @@ int main(int argc, char **argv)
             (options.imu        && (   (opendir(dir_oxts.c_str())               == NULL)))
             ||
             (options.gps        && (   (opendir(dir_oxts.c_str())               == NULL)))
+            ||
+            (options.stereoDisp && (   (opendir(dir_image04.c_str())            == NULL)))
             ||
             (options.velodyne   && (   (opendir(dir_velodyne_points.c_str())    == NULL)))
             ||
@@ -626,6 +638,21 @@ int main(int argc, char **argv)
             closedir (dir);
             done=true;
         }
+        if (!done && options.stereoDisp)
+        {
+            total_entries=0;
+            dir = opendir(dir_image04.c_str());
+            while(ent = readdir(dir))
+            {
+                //skip . & ..
+                len = strlen (ent->d_name);
+                //skip . & ..
+                if (len>2)
+                    total_entries++;
+            }
+            closedir (dir);
+            done=true;
+        }
     }
 
     if(options.viewer)
@@ -724,6 +751,43 @@ int main(int argc, char **argv)
     {
         // single timestamp for all published stuff
         Time current_timestamp=ros::Time::now();
+
+        if(options.stereoDisp)
+        {
+            // Allocate new disparity image message
+            stereo_msgs::DisparityImagePtr disp_msg = boost::make_shared<stereo_msgs::DisparityImage>();
+
+            full_filename_image04 = dir_image04 + boost::str(boost::format("%010d") % entries_played ) + ".png";
+            cv_image04 = cv::imread(full_filename_image04, CV_LOAD_IMAGE_GRAYSCALE);
+
+            disp_msg->min_disparity = 0;
+            disp_msg->min_disparity = 63;
+
+            disp_msg->valid_window.x_offset = 0;  // should be safe, checked!
+            disp_msg->valid_window.y_offset = 0;  // should be safe, checked!
+            disp_msg->valid_window.width    = 0;  // should be safe, checked!
+            disp_msg->valid_window.height   = 0;  // should be safe, checked!
+            disp_msg->T                     = 0;  // should be safe, checked!
+            disp_msg->f                     = 0;  // should be safe, checked!
+            disp_msg->delta_d               = 0;  // should be safe, checked!
+            disp_msg->header.stamp          = current_timestamp;
+            disp_msg->header.frame_id       = ros::this_node::getName();
+            disp_msg->header.seq            = progress.count();
+
+            sensor_msgs::Image& dimage = disp_msg->image;
+            dimage.width  = cv_image04.size().width ;
+            dimage.height = cv_image04.size().height ;
+            dimage.encoding = sensor_msgs::image_encodings::TYPE_32FC1;
+            dimage.step = dimage.width * sizeof(float);
+            dimage.data.resize(dimage.step * dimage.height);
+            cv::Mat_<float> dmat(dimage.height, dimage.width, reinterpret_cast<float*>(&dimage.data[0]), dimage.step);
+
+            cv_image04.convertTo(dmat,dmat.type());
+
+            disp_pub.publish(disp_msg);
+
+        }
+
 
         if(options.color || options.all_data)
         {

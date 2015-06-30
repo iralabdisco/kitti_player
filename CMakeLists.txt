@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(kitti_player)
 
-SET (CMAKE_BUILD_TYPE Release)
-SET (CMAKE_CXX_FLAGS "-O3 -std=c++11")
+SET (CMAKE_BUILD_TYPE Debug)
+SET (CMAKE_CXX_FLAGS "-O0 -std=c++11")
 
 find_package(catkin REQUIRED COMPONENTS
                     roscpp
