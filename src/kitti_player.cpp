@@ -746,6 +746,7 @@ int main(int argc, char **argv)
     }
 
     boost::progress_display progress(total_entries) ;
+    double cv_min, cv_max=0.0f;
 
     do
     {
@@ -760,8 +761,10 @@ int main(int argc, char **argv)
             full_filename_image04 = dir_image04 + boost::str(boost::format("%010d") % entries_played ) + ".png";
             cv_image04 = cv::imread(full_filename_image04, CV_LOAD_IMAGE_GRAYSCALE);
 
-            disp_msg->min_disparity = 0;
-            disp_msg->min_disparity = 63;
+            cv::minMaxLoc(cv_image04,&cv_min,&cv_max);
+
+            disp_msg->min_disparity = (int)cv_min;
+            disp_msg->max_disparity = (int)cv_max;
 
             disp_msg->valid_window.x_offset = 0;  // should be safe, checked!
             disp_msg->valid_window.y_offset = 0;  // should be safe, checked!
@@ -787,7 +790,6 @@ int main(int argc, char **argv)
             disp_pub.publish(disp_msg);
 
         }
-
 
         if(options.color || options.all_data)
         {
