@@ -343,10 +343,10 @@ int getLaneDetection(string infile, road_layout_estimation::msg_lanes *msg_lanes
         return false;
 
     msg_lanes->number_of_lanes = 0;
-    msg_lanes->goodLanes       = 0;
+    msg_lanes->goodLines       = 0;
     msg_lanes->width           = 0;
     msg_lanes->oneway          = 0;
-    msg_lanes->lanes.clear();
+    msg_lanes->lines.clear();
 
     typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
     boost::char_separator<char> sep{"\t"};  // TAB
@@ -364,13 +364,13 @@ int getLaneDetection(string infile, road_layout_estimation::msg_lanes *msg_lanes
         if (index==0)
         {
             vector<string> s(tok.begin(), tok.end());
-            msg_lanes->goodLanes = boost::lexical_cast<int>(s[0]);
+            msg_lanes->goodLines = boost::lexical_cast<int>(s[0]);
 
             index++;
         }
         else
         {
-            road_layout_estimation::msg_laneInfo lane;
+            road_layout_estimation::msg_lineInfo line;
 
             vector<string> s(tok.begin(), tok.end());
 
@@ -380,31 +380,38 @@ int getLaneDetection(string infile, road_layout_estimation::msg_lanes *msg_lanes
                 return false;
             }
 
-            lane.isValid = boost::lexical_cast<bool>  (s[0]);
-            lane.counter = boost::lexical_cast<int>   (s[1]);
-            lane.offset  = boost::lexical_cast<float> (s[2]);
+            line.isValid = boost::lexical_cast<bool>  (s[0]);
+            line.counter = boost::lexical_cast<int>   (s[1]);
+            line.offset  = boost::lexical_cast<float> (s[2]);
 
-            msg_lanes->lanes.push_back(lane);
+            msg_lanes->lines.push_back(line);
 
-            if (lane.isValid)
+            if (line.isValid)
             {
-                if (lane.offset  > last_right_detection)
-                    last_right_detection = lane.offset;
+                if (line.offset  > last_right_detection)
+                    last_right_detection = line.offset;
 
-                if (lane.offset  < last_left_detection)
-                    last_left_detection = lane.offset;
+                if (line.offset  < last_left_detection)
+                    last_left_detection = line.offset;
             }
 
             index++;
         }
     }
 
-    msg_lanes->number_of_lanes = index-1; // account for the counter variable
+    // number of [EN]-lanes [IT]-corsie [ES]-carriles
+    if(msg_lanes->goodLines<=2)
+        msg_lanes->number_of_lanes = 1;
+    else
+        msg_lanes->number_of_lanes = msg_lanes->goodLines - 1;
+
+
     msg_lanes->width = abs(last_left_detection) + abs(last_right_detection);
 
     if (msg_lanes->width == std::numeric_limits<double>::max())
         msg_lanes->width = 0.0f;
 
+    ROS_DEBUG_STREAM("Number of LANEs: " << msg_lanes->number_of_lanes << "\tNumber of good LINEs"<<msg_lanes->goodLines);
     ROS_DEBUG_STREAM("... getLaneDetection ok");
     return true;
 }
