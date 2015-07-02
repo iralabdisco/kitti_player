@@ -405,8 +405,8 @@ int getLaneDetection(string infile, road_layout_estimation::msg_lanes *msg_lanes
     else
         msg_lanes->number_of_lanes = msg_lanes->goodLines - 1;
 
-
     msg_lanes->width = abs(last_left_detection) + abs(last_right_detection);
+    msg_lanes->way_id = 0; ///WARNING this value is not used yet.
 
     if (msg_lanes->width == std::numeric_limits<double>::max())
         msg_lanes->width = 0.0f;
