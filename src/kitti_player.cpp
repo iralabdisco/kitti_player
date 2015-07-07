@@ -52,8 +52,8 @@
 
 /// EXTRA messages, not from KITTI
 /// Inser here further detectors & features to be published
-#include <road_layout_estimation/msg_lanes.h>
-#include <road_layout_estimation/msg_laneInfo.h>
+#include <road_layout_estimation/msg_lines.h>
+#include <road_layout_estimation/msg_lineInfo.h>
 
 using namespace std;
 using namespace pcl;
@@ -334,7 +334,7 @@ std_msgs::Header parseTime(string timestamp)
     return header;
 }
 
-int getLaneDetection(string infile, road_layout_estimation::msg_lanes *msg_lanes)
+int getLaneDetection(string infile, road_layout_estimation::msg_lines *msg_lines)
 {
     ROS_DEBUG_STREAM("Reading lane detections from " << infile);
 
@@ -342,19 +342,22 @@ int getLaneDetection(string infile, road_layout_estimation::msg_lanes *msg_lanes
     if (!detection_file.is_open())
         return false;
 
-    msg_lanes->number_of_lanes = 0;
-    msg_lanes->goodLines       = 0;
-    msg_lanes->width           = 0;
-    msg_lanes->oneway          = 0;
-    msg_lanes->lines.clear();
+    msg_lines->number_of_lines = 0;
+    msg_lines->goodLines       = 0;
+    msg_lines->width           = 0;
+    msg_lines->oneway          = 0;    
+    msg_lines->naive_width     = 0;
+    msg_lines->lines.clear();
 
     typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
     boost::char_separator<char> sep{"\t"};  // TAB
 
     string  line="";
     char    index = 0;
-    double  last_right_detection = std::numeric_limits<double>::min();
-    double  last_left_detection  = std::numeric_limits<double>::max();
+    double  last_right_detection = std::numeric_limits<double>::min();          //uses *ONLY* the valid lines
+    double  last_left_detection  = std::numeric_limits<double>::max();          //uses *ONLY* the valid lines
+    double  naive_last_right_detection = std::numeric_limits<double>::min();    //uses all values, even if the line is not valid
+    double  naive_last_left_detection  = std::numeric_limits<double>::max();    //uses all values, even if the line is not valid
 
     while (getline(detection_file,line))
     {
@@ -364,7 +367,7 @@ int getLaneDetection(string infile, road_layout_estimation::msg_lanes *msg_lanes
         if (index==0)
         {
             vector<string> s(tok.begin(), tok.end());
-            msg_lanes->goodLines = boost::lexical_cast<int>(s[0]);
+            msg_lines->goodLines = boost::lexical_cast<int>(s[0]);
 
             index++;
         }
@@ -384,7 +387,7 @@ int getLaneDetection(string infile, road_layout_estimation::msg_lanes *msg_lanes
             line.counter = boost::lexical_cast<int>   (s[1]);
             line.offset  = boost::lexical_cast<float> (s[2]);
 
-            msg_lanes->lines.push_back(line);
+            msg_lines->lines.push_back(line);
 
             if (line.isValid)
             {
@@ -395,23 +398,28 @@ int getLaneDetection(string infile, road_layout_estimation::msg_lanes *msg_lanes
                     last_left_detection = line.offset;
             }
 
+            if (line.offset  > naive_last_right_detection)
+                naive_last_right_detection = line.offset;
+            if (line.offset  < naive_last_left_detection)
+                naive_last_left_detection = line.offset;
+
             index++;
         }
     }
 
-    // number of [EN]-lanes [IT]-corsie [ES]-carriles
-    if(msg_lanes->goodLines<=2)
-        msg_lanes->number_of_lanes = 1;
-    else
-        msg_lanes->number_of_lanes = msg_lanes->goodLines - 1;
+    msg_lines->number_of_lines = index -1 ;
 
-    msg_lanes->width = abs(last_left_detection) + abs(last_right_detection);
-    msg_lanes->way_id = 0; ///WARNING this value is not used yet.
+    msg_lines->width = abs(last_left_detection) + abs(last_right_detection);
+    msg_lines->naive_width = abs(naive_last_left_detection) + abs(naive_last_right_detection);
+    msg_lines->way_id = 0; ///WARNING this value is not used yet.
 
-    if (msg_lanes->width == std::numeric_limits<double>::max())
-        msg_lanes->width = 0.0f;
+    if (msg_lines->width == std::numeric_limits<double>::max())
+        msg_lines->width = 0.0f;
 
-    ROS_DEBUG_STREAM("Number of LANEs: " << msg_lanes->number_of_lanes << "\tNumber of good LINEs"<<msg_lanes->goodLines);
+    if (msg_lines->naive_width == std::numeric_limits<double>::max())
+        msg_lines->naive_width = 0.0f;
+
+    ROS_DEBUG_STREAM("Number of LANEs: " << msg_lines->number_of_lines << "\tNumber of good LINEs "<<msg_lines->goodLines);
     ROS_DEBUG_STREAM("... getLaneDetection ok");
     return true;
 }
@@ -537,13 +545,12 @@ int main(int argc, char **argv)
     ros::Publisher gps_pub   = node.advertise<sensor_msgs::NavSatFix>  ("oxts/gps", 1, true);
     ros::Publisher imu_pub   = node.advertise<sensor_msgs::Imu>  ("oxts/imu", 1, true);
     ros::Publisher disp_pub  = node.advertise<stereo_msgs::DisparityImage>("preprocessed_disparity",1,true);
-    ros::Publisher lanes_pub = node.advertise<road_layout_estimation::msg_lanes>("lanes",1,true);
+    ros::Publisher lanes_pub = node.advertise<road_layout_estimation::msg_lines>("lanes",1,true);
 
     sensor_msgs::NavSatFix  ros_msgGpsFix;
     sensor_msgs::Imu        ros_msgImu;
 
-    road_layout_estimation::msg_lanes    msgLanes;
-    road_layout_estimation::msg_laneInfo msgSingleLaneInfo;
+    road_layout_estimation::msg_lines    msgLanes;
 
     if (vm.count("help")) {
         cout << desc << endl;

@@ -10,7 +10,7 @@
     <node   name="kitti_player" pkg="kitti_player" type="kitti_player"
             output = "screen"
             required="true"
-            args= "-d $(arg directory) -f 3 -a -s -l"
+            args= "-d $(arg directory) -f 1 -a -s -l"
             />
 
     <!--rosrun image_view stereo_view stereo:=/kitti_player/grayscale image:=image_rect _approximate_sync:=True
