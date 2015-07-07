@@ -52,8 +52,13 @@
 
 /// EXTRA messages, not from KITTI
 /// Inser here further detectors & features to be published
-#include <road_layout_estimation/msg_lanes.h>
-#include <road_layout_estimation/msg_laneInfo.h>
+#include <road_layout_estimation/msg_lines.h>
+#include <road_layout_estimation/msg_lineInfo.h>
+
+#include <sys/stat.h>
+#include <termios.h>
+#include <time.h>
+#include <unistd.h>
 
 using namespace std;
 using namespace pcl;
@@ -61,6 +66,8 @@ using namespace ros;
 using namespace tf;
 
 namespace po = boost::program_options;
+fd_set  stdin_fdset_;
+int     maxfd_;
 
 struct kitti_player_options
 {
@@ -334,7 +341,7 @@ std_msgs::Header parseTime(string timestamp)
     return header;
 }
 
-int getLaneDetection(string infile, road_layout_estimation::msg_lanes *msg_lanes)
+int getLaneDetection(string infile, road_layout_estimation::msg_lines *msg_lines)
 {
     ROS_DEBUG_STREAM("Reading lane detections from " << infile);
 
@@ -342,19 +349,21 @@ int getLaneDetection(string infile, road_layout_estimation::msg_lanes *msg_lanes
     if (!detection_file.is_open())
         return false;
 
-    msg_lanes->number_of_lanes = 0;
-    msg_lanes->goodLines       = 0;
-    msg_lanes->width           = 0;
-    msg_lanes->oneway          = 0;
-    msg_lanes->lines.clear();
+    msg_lines->number_of_lines = 0;
+    msg_lines->goodLines       = 0;
+    msg_lines->width           = 0;
+    msg_lines->oneway          = 0;
+    msg_lines->lines.clear();
 
     typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
     boost::char_separator<char> sep{"\t"};  // TAB
 
     string  line="";
     char    index = 0;
-    double  last_right_detection = std::numeric_limits<double>::min();
-    double  last_left_detection  = std::numeric_limits<double>::max();
+    double  last_right_detection = std::numeric_limits<double>::min();          //uses *ONLY* the valid lines
+    double  last_left_detection  = std::numeric_limits<double>::max();          //uses *ONLY* the valid lines
+    double  naive_last_right_detection = std::numeric_limits<double>::min();    //uses all values, even if the line is not valid
+    double  naive_last_left_detection  = std::numeric_limits<double>::max();    //uses all values, even if the line is not valid
 
     while (getline(detection_file,line))
     {
@@ -364,7 +373,7 @@ int getLaneDetection(string infile, road_layout_estimation::msg_lanes *msg_lanes
         if (index==0)
         {
             vector<string> s(tok.begin(), tok.end());
-            msg_lanes->goodLines = boost::lexical_cast<int>(s[0]);
+            msg_lines->goodLines = boost::lexical_cast<int>(s[0]);
 
             index++;
         }
@@ -384,7 +393,7 @@ int getLaneDetection(string infile, road_layout_estimation::msg_lanes *msg_lanes
             line.counter = boost::lexical_cast<int>   (s[1]);
             line.offset  = boost::lexical_cast<float> (s[2]);
 
-            msg_lanes->lines.push_back(line);
+            msg_lines->lines.push_back(line);
 
             if (line.isValid)
             {
@@ -395,26 +404,73 @@ int getLaneDetection(string infile, road_layout_estimation::msg_lanes *msg_lanes
                     last_left_detection = line.offset;
             }
 
+            if (line.offset  > naive_last_right_detection)
+                naive_last_right_detection = line.offset;
+            if (line.offset  < naive_last_left_detection)
+                naive_last_left_detection = line.offset;
+
             index++;
         }
     }
 
-    // number of [EN]-lanes [IT]-corsie [ES]-carriles
-    if(msg_lanes->goodLines<=2)
-        msg_lanes->number_of_lanes = 1;
-    else
-        msg_lanes->number_of_lanes = msg_lanes->goodLines - 1;
+    msg_lines->number_of_lines = index -1 ;
 
-    msg_lanes->width = abs(last_left_detection) + abs(last_right_detection);
-    msg_lanes->way_id = 0; ///WARNING this value is not used yet.
+    msg_lines->width = abs(last_left_detection) + abs(last_right_detection);
+    msg_lines->naive_width = abs(naive_last_left_detection) + abs(naive_last_right_detection);
+    msg_lines->way_id = 0; ///WARNING this value is not used yet.
 
-    if (msg_lanes->width == std::numeric_limits<double>::max())
-        msg_lanes->width = 0.0f;
+    if (msg_lines->width == std::numeric_limits<double>::max())
+        msg_lines->width = 0.0f;
 
-    ROS_DEBUG_STREAM("Number of LANEs: " << msg_lanes->number_of_lanes << "\tNumber of good LINEs"<<msg_lanes->goodLines);
+    if (msg_lines->naive_width == std::numeric_limits<double>::max())
+        msg_lines->naive_width = 0.0f;
+
+    ROS_DEBUG_STREAM("Number of LANEs: " << msg_lines->number_of_lines << "\tNumber of good LINEs "<<msg_lines->goodLines);
     ROS_DEBUG_STREAM("... getLaneDetection ok");
     return true;
 }
+
+char readCharFromStdin()
+{
+    ROS_INFO_STREAM("here");
+
+    return getc(stdin);
+
+}
+
+void setupTerminal()
+{
+    //if (terminal_modified_)
+    //    return;
+
+    termios orig_flags_;
+    const int fd = fileno(stdin);
+    termios flags;
+    tcgetattr(fd, &orig_flags_);
+    flags = orig_flags_;
+    flags.c_lflag &= ~ICANON;      // set raw (unset canonical modes)
+    flags.c_cc[VMIN]  = 0;         // i.e. min 1 char for blocking, 0 chars for non-blocking
+    flags.c_cc[VTIME] = 0;         // block if waiting for char
+    tcsetattr(fd, TCSANOW, &flags);
+
+    FD_ZERO(&stdin_fdset_);
+    FD_SET(fd, &stdin_fdset_);
+    maxfd_ = fd + 1;
+
+    //terminal_modified_ = true;
+}
+
+//void restoreTerminal()
+//{
+//    //    if (!terminal_modified_)
+//    //            return;
+//
+//    const int fd = fileno(stdin);
+//    tcsetattr(fd, TCSANOW, &orig_flags_);
+//
+//    terminal_modified_ = false;
+//}
+
 
 int main(int argc, char **argv)
 {
@@ -537,13 +593,12 @@ int main(int argc, char **argv)
     ros::Publisher gps_pub   = node.advertise<sensor_msgs::NavSatFix>  ("oxts/gps", 1, true);
     ros::Publisher imu_pub   = node.advertise<sensor_msgs::Imu>  ("oxts/imu", 1, true);
     ros::Publisher disp_pub  = node.advertise<stereo_msgs::DisparityImage>("preprocessed_disparity",1,true);
-    ros::Publisher lanes_pub = node.advertise<road_layout_estimation::msg_lanes>("lanes",1,true);
+    ros::Publisher lanes_pub = node.advertise<road_layout_estimation::msg_lines>("lanes",1,true);
 
     sensor_msgs::NavSatFix  ros_msgGpsFix;
     sensor_msgs::Imu        ros_msgImu;
 
-    road_layout_estimation::msg_lanes    msgLanes;
-    road_layout_estimation::msg_laneInfo msgSingleLaneInfo;
+    road_layout_estimation::msg_lines    msgLanes;
 
     if (vm.count("help")) {
         cout << desc << endl;
@@ -880,314 +935,329 @@ int main(int argc, char **argv)
     boost::progress_display progress(total_entries) ;
     double cv_min, cv_max=0.0f;
 
+
+    bool paused = false;
+    setupTerminal();
+
     do
     {
         // single timestamp for all published stuff
         Time current_timestamp=ros::Time::now();
 
-        if(options.stereoDisp)
+        switch (getc(stdin))
         {
-            // Allocate new disparity image message
-            stereo_msgs::DisparityImagePtr disp_msg = boost::make_shared<stereo_msgs::DisparityImage>();
-
-            full_filename_image04 = dir_image04 + boost::str(boost::format("%010d") % entries_played ) + ".png";
-            cv_image04 = cv::imread(full_filename_image04, CV_LOAD_IMAGE_GRAYSCALE);
-
-            cv::minMaxLoc(cv_image04,&cv_min,&cv_max);
-
-            disp_msg->min_disparity = (int)cv_min;
-            disp_msg->max_disparity = (int)cv_max;
-
-            disp_msg->valid_window.x_offset = 0;  // should be safe, checked!
-            disp_msg->valid_window.y_offset = 0;  // should be safe, checked!
-            disp_msg->valid_window.width    = 0;  // should be safe, checked!
-            disp_msg->valid_window.height   = 0;  // should be safe, checked!
-            disp_msg->T                     = 0;  // should be safe, checked!
-            disp_msg->f                     = 0;  // should be safe, checked!
-            disp_msg->delta_d               = 0;  // should be safe, checked!
-            disp_msg->header.stamp          = current_timestamp;
-            disp_msg->header.frame_id       = ros::this_node::getName();
-            disp_msg->header.seq            = progress.count();
-
-            sensor_msgs::Image& dimage = disp_msg->image;
-            dimage.width  = cv_image04.size().width ;
-            dimage.height = cv_image04.size().height ;
-            dimage.encoding = sensor_msgs::image_encodings::TYPE_32FC1;
-            dimage.step = dimage.width * sizeof(float);
-            dimage.data.resize(dimage.step * dimage.height);
-            cv::Mat_<float> dmat(dimage.height, dimage.width, reinterpret_cast<float*>(&dimage.data[0]), dimage.step);
-
-            cv_image04.convertTo(dmat,dmat.type());
-
-            disp_pub.publish(disp_msg);
-
+        case ' ':
+            paused = !paused;
+            break;
         }
 
-        if(options.laneDetections)
+        if (!paused)
         {
-            //msgLanes;
-            //msgSingleLaneInfo;
-            string file=dir_laneDetections+boost::str(boost::format("%010d") % entries_played )+".txt";
-            if(getLaneDetection(file,&msgLanes))
-                lanes_pub.publish(msgLanes);
-
-            if (options.viewer)
+            if(options.stereoDisp)
             {
-                if (options.viewDisparities)
+                // Allocate new disparity image message
+                stereo_msgs::DisparityImagePtr disp_msg = boost::make_shared<stereo_msgs::DisparityImage>();
+
+                full_filename_image04 = dir_image04 + boost::str(boost::format("%010d") % entries_played ) + ".png";
+                cv_image04 = cv::imread(full_filename_image04, CV_LOAD_IMAGE_GRAYSCALE);
+
+                cv::minMaxLoc(cv_image04,&cv_min,&cv_max);
+
+                disp_msg->min_disparity = (int)cv_min;
+                disp_msg->max_disparity = (int)cv_max;
+
+                disp_msg->valid_window.x_offset = 0;  // should be safe, checked!
+                disp_msg->valid_window.y_offset = 0;  // should be safe, checked!
+                disp_msg->valid_window.width    = 0;  // should be safe, checked!
+                disp_msg->valid_window.height   = 0;  // should be safe, checked!
+                disp_msg->T                     = 0;  // should be safe, checked!
+                disp_msg->f                     = 0;  // should be safe, checked!
+                disp_msg->delta_d               = 0;  // should be safe, checked!
+                disp_msg->header.stamp          = current_timestamp;
+                disp_msg->header.frame_id       = ros::this_node::getName();
+                disp_msg->header.seq            = progress.count();
+
+                sensor_msgs::Image& dimage = disp_msg->image;
+                dimage.width  = cv_image04.size().width ;
+                dimage.height = cv_image04.size().height ;
+                dimage.encoding = sensor_msgs::image_encodings::TYPE_32FC1;
+                dimage.step = dimage.width * sizeof(float);
+                dimage.data.resize(dimage.step * dimage.height);
+                cv::Mat_<float> dmat(dimage.height, dimage.width, reinterpret_cast<float*>(&dimage.data[0]), dimage.step);
+
+                cv_image04.convertTo(dmat,dmat.type());
+
+                disp_pub.publish(disp_msg);
+
+            }
+
+            if(options.laneDetections)
+            {
+                //msgLanes;
+                //msgSingleLineInfo;
+                string file=dir_laneDetections+boost::str(boost::format("%010d") % entries_played )+".txt";
+                if(getLaneDetection(file,&msgLanes))
+                    lanes_pub.publish(msgLanes);
+
+                if (options.viewer)
                 {
-                    full_filename_laneProjected = dir_laneProjected + boost::str(boost::format("%010d") % entries_played ) + ".png";
-                    cv_laneProjected = cv::imread(full_filename_laneProjected, CV_LOAD_IMAGE_UNCHANGED);
-                    cv::imshow("Reprojection of Detected Lines",cv_laneProjected);
+                    if (options.viewDisparities)
+                    {
+                        full_filename_laneProjected = dir_laneProjected + boost::str(boost::format("%010d") % entries_played ) + ".png";
+                        cv_laneProjected = cv::imread(full_filename_laneProjected, CV_LOAD_IMAGE_UNCHANGED);
+                        cv::imshow("Reprojection of Detected Lines",cv_laneProjected);
+                        cv::waitKey(5);
+                    }
+                }
+            }
+
+            if(options.color || options.all_data)
+            {
+                full_filename_image02 = dir_image02 + boost::str(boost::format("%010d") % entries_played ) + ".png";
+                full_filename_image03 = dir_image03 + boost::str(boost::format("%010d") % entries_played ) + ".png";
+                ROS_DEBUG_STREAM ( full_filename_image02 << endl << full_filename_image03 << endl << endl);
+
+                cv_image02 = cv::imread(full_filename_image02, CV_LOAD_IMAGE_UNCHANGED);
+                cv_image03 = cv::imread(full_filename_image03, CV_LOAD_IMAGE_UNCHANGED);
+
+                if ( (cv_image02.data == NULL) || (cv_image03.data == NULL) ){
+                    ROS_ERROR_STREAM("Error reading color images (02 & 03)");
+                    ROS_ERROR_STREAM(full_filename_image02 << endl << full_filename_image03);
+                    node.shutdown();
+                    return 1;
+                }
+
+                if(options.viewer)
+                {
+                    //display the left image only
+                    cv::imshow("CameraSimulator Color Viewer",cv_image02);
+                    //give some time to draw images
                     cv::waitKey(5);
                 }
-            }
-        }
 
-        if(options.color || options.all_data)
-        {
-            full_filename_image02 = dir_image02 + boost::str(boost::format("%010d") % entries_played ) + ".png";
-            full_filename_image03 = dir_image03 + boost::str(boost::format("%010d") % entries_played ) + ".png";
-            ROS_DEBUG_STREAM ( full_filename_image02 << endl << full_filename_image03 << endl << endl);
+                cv_bridge_img.encoding = sensor_msgs::image_encodings::BGR8;
+                cv_bridge_img.header.frame_id = ros::this_node::getName();
 
-            cv_image02 = cv::imread(full_filename_image02, CV_LOAD_IMAGE_UNCHANGED);
-            cv_image03 = cv::imread(full_filename_image03, CV_LOAD_IMAGE_UNCHANGED);
-
-            if ( (cv_image02.data == NULL) || (cv_image03.data == NULL) ){
-                ROS_ERROR_STREAM("Error reading color images (02 & 03)");
-                ROS_ERROR_STREAM(full_filename_image02 << endl << full_filename_image03);
-                node.shutdown();
-                return 1;
-            }
-
-            if(options.viewer)
-            {
-                //display the left image only
-                cv::imshow("CameraSimulator Color Viewer",cv_image02);
-                //give some time to draw images
-                cv::waitKey(5);
-            }
-
-            cv_bridge_img.encoding = sensor_msgs::image_encodings::BGR8;
-            cv_bridge_img.header.frame_id = ros::this_node::getName();
-
-            if (!options.timestamps)
-            {
-                cv_bridge_img.header.stamp = current_timestamp ;
-                ros_msg02.header.stamp = ros_cameraInfoMsg_camera02.header.stamp = cv_bridge_img.header.stamp;
-            }
-            else
-            {
-
-                str_support = dir_timestamp_image02 + "timestamps.txt";
-                ifstream timestamps(str_support.c_str());
-                if (!timestamps.is_open())
+                if (!options.timestamps)
                 {
-                    ROS_ERROR_STREAM("Fail to open " << timestamps);
-                    return 1;
+                    cv_bridge_img.header.stamp = current_timestamp ;
+                    ros_msg02.header.stamp = ros_cameraInfoMsg_camera02.header.stamp = cv_bridge_img.header.stamp;
                 }
-                timestamps.seekg(30*entries_played);
-                getline(timestamps,str_support);
-                cv_bridge_img.header.stamp = parseTime(str_support).stamp;
-                ros_msg02.header.stamp = ros_cameraInfoMsg_camera02.header.stamp = cv_bridge_img.header.stamp;
-            }
-            cv_bridge_img.image = cv_image02;
-            cv_bridge_img.toImageMsg(ros_msg02);
-
-            if (!options.timestamps)
-            {
-                cv_bridge_img.header.stamp = current_timestamp;
-                ros_msg03.header.stamp = ros_cameraInfoMsg_camera03.header.stamp = cv_bridge_img.header.stamp;
-            }
-            else
-            {
-
-                str_support = dir_timestamp_image03 + "timestamps.txt";
-                ifstream timestamps(str_support.c_str());
-                if (!timestamps.is_open())
+                else
                 {
-                    ROS_ERROR_STREAM("Fail to open " << timestamps);
-                    return 1;
+
+                    str_support = dir_timestamp_image02 + "timestamps.txt";
+                    ifstream timestamps(str_support.c_str());
+                    if (!timestamps.is_open())
+                    {
+                        ROS_ERROR_STREAM("Fail to open " << timestamps);
+                        return 1;
+                    }
+                    timestamps.seekg(30*entries_played);
+                    getline(timestamps,str_support);
+                    cv_bridge_img.header.stamp = parseTime(str_support).stamp;
+                    ros_msg02.header.stamp = ros_cameraInfoMsg_camera02.header.stamp = cv_bridge_img.header.stamp;
                 }
-                timestamps.seekg(30*entries_played);
-                getline(timestamps,str_support);
-                cv_bridge_img.header.stamp = parseTime(str_support).stamp;
-                ros_msg03.header.stamp = ros_cameraInfoMsg_camera03.header.stamp = cv_bridge_img.header.stamp;
-            }
+                cv_bridge_img.image = cv_image02;
+                cv_bridge_img.toImageMsg(ros_msg02);
 
-            cv_bridge_img.image = cv_image03;
-            cv_bridge_img.toImageMsg(ros_msg03);
-
-            pub02.publish(ros_msg02,ros_cameraInfoMsg_camera02);
-            pub03.publish(ros_msg03,ros_cameraInfoMsg_camera03);
-
-        }
-
-        if(options.grayscale || options.all_data)
-        {
-            full_filename_image00 = dir_image00 + boost::str(boost::format("%010d") % entries_played ) + ".png";
-            full_filename_image01 = dir_image01 + boost::str(boost::format("%010d") % entries_played ) + ".png";
-            ROS_DEBUG_STREAM ( full_filename_image00 << endl << full_filename_image01 << endl << endl);
-
-            cv_image00 = cv::imread(full_filename_image00, CV_LOAD_IMAGE_UNCHANGED);
-            cv_image01 = cv::imread(full_filename_image01, CV_LOAD_IMAGE_UNCHANGED);
-
-            if ( (cv_image00.data == NULL) || (cv_image01.data == NULL) ){
-                ROS_ERROR_STREAM("Error reading color images (00 & 01)");
-                ROS_ERROR_STREAM(full_filename_image00 << endl << full_filename_image01);
-                node.shutdown();
-                return 1;
-            }
-
-            if(options.viewer)
-            {
-                //display the left image only
-                cv::imshow("CameraSimulator Grayscale Viewer",cv_image00);
-                //give some time to draw images
-                cv::waitKey(5);
-            }
-
-            cv_bridge_img.encoding = sensor_msgs::image_encodings::MONO8;
-            cv_bridge_img.header.frame_id = ros::this_node::getName();
-
-            if (!options.timestamps)
-            {
-                cv_bridge_img.header.stamp = current_timestamp;
-                ros_msg00.header.stamp = ros_cameraInfoMsg_camera00.header.stamp = cv_bridge_img.header.stamp;
-            }
-            else
-            {
-
-                str_support = dir_timestamp_image02 + "timestamps.txt";
-                ifstream timestamps(str_support.c_str());
-                if (!timestamps.is_open())
+                if (!options.timestamps)
                 {
-                    ROS_ERROR_STREAM("Fail to open " << timestamps);
-                    return 1;
+                    cv_bridge_img.header.stamp = current_timestamp;
+                    ros_msg03.header.stamp = ros_cameraInfoMsg_camera03.header.stamp = cv_bridge_img.header.stamp;
                 }
-                timestamps.seekg(30*entries_played);
-                getline(timestamps,str_support);
-                cv_bridge_img.header.stamp = parseTime(str_support).stamp;
-                ros_msg00.header.stamp = ros_cameraInfoMsg_camera00.header.stamp = cv_bridge_img.header.stamp;
-            }
-            cv_bridge_img.image = cv_image00;
-            cv_bridge_img.toImageMsg(ros_msg00);
-
-            if (!options.timestamps)
-            {
-                cv_bridge_img.header.stamp = current_timestamp;
-                ros_msg01.header.stamp = ros_cameraInfoMsg_camera01.header.stamp = cv_bridge_img.header.stamp;
-            }
-            else
-            {
-
-                str_support = dir_timestamp_image02 + "timestamps.txt";
-                ifstream timestamps(str_support.c_str());
-                if (!timestamps.is_open())
+                else
                 {
-                    ROS_ERROR_STREAM("Fail to open " << timestamps);
-                    return 1;
+
+                    str_support = dir_timestamp_image03 + "timestamps.txt";
+                    ifstream timestamps(str_support.c_str());
+                    if (!timestamps.is_open())
+                    {
+                        ROS_ERROR_STREAM("Fail to open " << timestamps);
+                        return 1;
+                    }
+                    timestamps.seekg(30*entries_played);
+                    getline(timestamps,str_support);
+                    cv_bridge_img.header.stamp = parseTime(str_support).stamp;
+                    ros_msg03.header.stamp = ros_cameraInfoMsg_camera03.header.stamp = cv_bridge_img.header.stamp;
                 }
-                timestamps.seekg(30*entries_played);
-                getline(timestamps,str_support);
-                cv_bridge_img.header.stamp = parseTime(str_support).stamp;
-                ros_msg01.header.stamp = ros_cameraInfoMsg_camera01.header.stamp = cv_bridge_img.header.stamp;
-            }
-            cv_bridge_img.image = cv_image01;
-            cv_bridge_img.toImageMsg(ros_msg01);
 
-            pub00.publish(ros_msg00,ros_cameraInfoMsg_camera00);
-            pub01.publish(ros_msg01,ros_cameraInfoMsg_camera01);
+                cv_bridge_img.image = cv_image03;
+                cv_bridge_img.toImageMsg(ros_msg03);
 
-        }
+                pub02.publish(ros_msg02,ros_cameraInfoMsg_camera02);
+                pub03.publish(ros_msg03,ros_cameraInfoMsg_camera03);
 
-        if(options.velodyne || options.all_data)
-        {            
-            header_support.stamp = current_timestamp;
-            full_filename_velodyne = dir_velodyne_points + boost::str(boost::format("%010d") % entries_played ) + ".bin";
-
-            if (!options.timestamps)
-                publish_velodyne(map_pub, full_filename_velodyne,&header_support);
-            else
-            {
-                str_support = dir_timestamp_velodyne + "timestamps.txt";
-                ifstream timestamps(str_support.c_str());
-                if (!timestamps.is_open())
-                {
-                    ROS_ERROR_STREAM("Fail to open " << timestamps);
-                    return 1;
-                }
-                timestamps.seekg(30*entries_played);
-                getline(timestamps,str_support);
-                header_support.stamp = parseTime(str_support).stamp;
-                publish_velodyne(map_pub, full_filename_velodyne,&header_support);
             }
 
-
-        }
-
-        if(options.gps || options.all_data)
-        {
-            header_support.stamp = current_timestamp; //ros::Time::now();
-            if (options.timestamps)
+            if(options.grayscale || options.all_data)
             {
-                str_support = dir_timestamp_oxts + "timestamps.txt";
-                ifstream timestamps(str_support.c_str());
-                if (!timestamps.is_open())
-                {
-                    ROS_ERROR_STREAM("Fail to open " << timestamps);
+                full_filename_image00 = dir_image00 + boost::str(boost::format("%010d") % entries_played ) + ".png";
+                full_filename_image01 = dir_image01 + boost::str(boost::format("%010d") % entries_played ) + ".png";
+                ROS_DEBUG_STREAM ( full_filename_image00 << endl << full_filename_image01 << endl << endl);
+
+                cv_image00 = cv::imread(full_filename_image00, CV_LOAD_IMAGE_UNCHANGED);
+                cv_image01 = cv::imread(full_filename_image01, CV_LOAD_IMAGE_UNCHANGED);
+
+                if ( (cv_image00.data == NULL) || (cv_image01.data == NULL) ){
+                    ROS_ERROR_STREAM("Error reading color images (00 & 01)");
+                    ROS_ERROR_STREAM(full_filename_image00 << endl << full_filename_image01);
                     node.shutdown();
                     return 1;
                 }
-                timestamps.seekg(30*entries_played);
-                getline(timestamps,str_support);
-                header_support.stamp = parseTime(str_support).stamp;
-            }
 
-            full_filename_oxts = dir_oxts + boost::str(boost::format("%010d") % entries_played ) + ".txt";
-            if (!getGPS(full_filename_oxts,&ros_msgGpsFix,&header_support))
-            {
-                ROS_ERROR_STREAM("Fail to open " << full_filename_oxts);
-                node.shutdown();
-                return 1;
-            }
-
-
-
-            gps_pub.publish(ros_msgGpsFix);
-        }
-
-        if(options.imu || options.all_data)
-        {
-            header_support.stamp = current_timestamp; //ros::Time::now();
-            if (options.timestamps)
-            {
-                str_support = dir_timestamp_oxts + "timestamps.txt";
-                ifstream timestamps(str_support.c_str());
-                if (!timestamps.is_open())
+                if(options.viewer)
                 {
-                    ROS_ERROR_STREAM("Fail to open " << timestamps);
+                    //display the left image only
+                    cv::imshow("CameraSimulator Grayscale Viewer",cv_image00);
+                    //give some time to draw images
+                    cv::waitKey(5);
+                }
+
+                cv_bridge_img.encoding = sensor_msgs::image_encodings::MONO8;
+                cv_bridge_img.header.frame_id = ros::this_node::getName();
+
+                if (!options.timestamps)
+                {
+                    cv_bridge_img.header.stamp = current_timestamp;
+                    ros_msg00.header.stamp = ros_cameraInfoMsg_camera00.header.stamp = cv_bridge_img.header.stamp;
+                }
+                else
+                {
+
+                    str_support = dir_timestamp_image02 + "timestamps.txt";
+                    ifstream timestamps(str_support.c_str());
+                    if (!timestamps.is_open())
+                    {
+                        ROS_ERROR_STREAM("Fail to open " << timestamps);
+                        return 1;
+                    }
+                    timestamps.seekg(30*entries_played);
+                    getline(timestamps,str_support);
+                    cv_bridge_img.header.stamp = parseTime(str_support).stamp;
+                    ros_msg00.header.stamp = ros_cameraInfoMsg_camera00.header.stamp = cv_bridge_img.header.stamp;
+                }
+                cv_bridge_img.image = cv_image00;
+                cv_bridge_img.toImageMsg(ros_msg00);
+
+                if (!options.timestamps)
+                {
+                    cv_bridge_img.header.stamp = current_timestamp;
+                    ros_msg01.header.stamp = ros_cameraInfoMsg_camera01.header.stamp = cv_bridge_img.header.stamp;
+                }
+                else
+                {
+
+                    str_support = dir_timestamp_image02 + "timestamps.txt";
+                    ifstream timestamps(str_support.c_str());
+                    if (!timestamps.is_open())
+                    {
+                        ROS_ERROR_STREAM("Fail to open " << timestamps);
+                        return 1;
+                    }
+                    timestamps.seekg(30*entries_played);
+                    getline(timestamps,str_support);
+                    cv_bridge_img.header.stamp = parseTime(str_support).stamp;
+                    ros_msg01.header.stamp = ros_cameraInfoMsg_camera01.header.stamp = cv_bridge_img.header.stamp;
+                }
+                cv_bridge_img.image = cv_image01;
+                cv_bridge_img.toImageMsg(ros_msg01);
+
+                pub00.publish(ros_msg00,ros_cameraInfoMsg_camera00);
+                pub01.publish(ros_msg01,ros_cameraInfoMsg_camera01);
+
+            }
+
+            if(options.velodyne || options.all_data)
+            {
+                header_support.stamp = current_timestamp;
+                full_filename_velodyne = dir_velodyne_points + boost::str(boost::format("%010d") % entries_played ) + ".bin";
+
+                if (!options.timestamps)
+                    publish_velodyne(map_pub, full_filename_velodyne,&header_support);
+                else
+                {
+                    str_support = dir_timestamp_velodyne + "timestamps.txt";
+                    ifstream timestamps(str_support.c_str());
+                    if (!timestamps.is_open())
+                    {
+                        ROS_ERROR_STREAM("Fail to open " << timestamps);
+                        return 1;
+                    }
+                    timestamps.seekg(30*entries_played);
+                    getline(timestamps,str_support);
+                    header_support.stamp = parseTime(str_support).stamp;
+                    publish_velodyne(map_pub, full_filename_velodyne,&header_support);
+                }
+
+
+            }
+
+            if(options.gps || options.all_data)
+            {
+                header_support.stamp = current_timestamp; //ros::Time::now();
+                if (options.timestamps)
+                {
+                    str_support = dir_timestamp_oxts + "timestamps.txt";
+                    ifstream timestamps(str_support.c_str());
+                    if (!timestamps.is_open())
+                    {
+                        ROS_ERROR_STREAM("Fail to open " << timestamps);
+                        node.shutdown();
+                        return 1;
+                    }
+                    timestamps.seekg(30*entries_played);
+                    getline(timestamps,str_support);
+                    header_support.stamp = parseTime(str_support).stamp;
+                }
+
+                full_filename_oxts = dir_oxts + boost::str(boost::format("%010d") % entries_played ) + ".txt";
+                if (!getGPS(full_filename_oxts,&ros_msgGpsFix,&header_support))
+                {
+                    ROS_ERROR_STREAM("Fail to open " << full_filename_oxts);
                     node.shutdown();
                     return 1;
                 }
-                timestamps.seekg(30*entries_played);
-                getline(timestamps,str_support);
-                header_support.stamp = parseTime(str_support).stamp;
+
+
+
+                gps_pub.publish(ros_msgGpsFix);
             }
 
-
-            full_filename_oxts = dir_oxts + boost::str(boost::format("%010d") % entries_played ) + ".txt";
-            if (!getIMU(full_filename_oxts,&ros_msgImu,&header_support))
+            if(options.imu || options.all_data)
             {
-                ROS_ERROR_STREAM("Fail to open " << full_filename_oxts);
-                node.shutdown();
-                return 1;
-            }
-            imu_pub.publish(ros_msgImu);
+                header_support.stamp = current_timestamp; //ros::Time::now();
+                if (options.timestamps)
+                {
+                    str_support = dir_timestamp_oxts + "timestamps.txt";
+                    ifstream timestamps(str_support.c_str());
+                    if (!timestamps.is_open())
+                    {
+                        ROS_ERROR_STREAM("Fail to open " << timestamps);
+                        node.shutdown();
+                        return 1;
+                    }
+                    timestamps.seekg(30*entries_played);
+                    getline(timestamps,str_support);
+                    header_support.stamp = parseTime(str_support).stamp;
+                }
 
+
+                full_filename_oxts = dir_oxts + boost::str(boost::format("%010d") % entries_played ) + ".txt";
+                if (!getIMU(full_filename_oxts,&ros_msgImu,&header_support))
+                {
+                    ROS_ERROR_STREAM("Fail to open " << full_filename_oxts);
+                    node.shutdown();
+                    return 1;
+                }
+                imu_pub.publish(ros_msgImu);
+
+            }
+
+            ++progress;
+            entries_played++;
         }
 
-        ++progress;
-        entries_played++;
         loop_rate.sleep();
     }
     while(entries_played<=total_entries-1 && ros::ok());

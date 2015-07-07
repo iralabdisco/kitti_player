@@ -10,7 +10,7 @@
     <node   name="kitti_player" pkg="kitti_player" type="kitti_player"
             output = "screen"
             required="true"
-            args= "-d $(arg directory) -f 5 -a -s -l -V -D"
+            args= "-d $(arg directory) -f 3 -a -s -l"
             />
 
     <!--rosrun image_view stereo_view stereo:=/kitti_player/grayscale image:=image_rect _approximate_sync:=True
@@ -20,20 +20,15 @@
             </node>
     </group>-->
 
-<!--    <node pkg="tf" type="static_transform_publisher" name="visual_odometry_camera_frame_to_visual_odometry_car_frame"
+    <!--This transform is also defined in the RLE launchers, useless-->
+    <!--    <node pkg="tf" type="static_transform_publisher" name="visual_odometry_camera_frame_to_visual_odometry_car_frame"
           args="0 0 0 -1.570796 0 -1.570796 base_link kitti_player 50" />-->
 
-    <!-- Run the viso2_ros package 
+    <!-- Run the viso2_ros package -->
     <node pkg="viso2_ros" type="stereo_odometer" name="stereo_odometer" required="true">
+            <rosparam param="base_link_frame_id">visual_odometry_camera_frame</rosparam>
             <remap from="stereo" to="$(arg camera)"/>
             <remap from="image" to="image_rect"/>
-    </node>-->
-
-    <!-- Launch RViz
-    <arg  name="rviz" default="$(find kitti_player)/cfg/rviz_kitti_player.rviz" />
-    <node pkg="rviz" type="rviz" name="rviz"
-            args="-d $(arg rviz)"
-            output="screen"
-    />-->
+    </node>
 
 </launch>
