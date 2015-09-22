@@ -497,6 +497,12 @@ int main(int argc, char **argv)
     ros::NodeHandle node("kitti_player");
     ros::Rate loop_rate(options.frequency);
 
+    /// This sets the logger level; use this to disable all ROS prints
+    if( ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Debug) )
+        ros::console::notifyLoggerLevelsChanged();
+    else
+        std::cout << "Error while setting the logger level!" << std::endl;
+
     DIR *dir;
     struct dirent *ent;
     unsigned int total_entries = 0;        //number of elements to be played
@@ -541,13 +547,16 @@ int main(int argc, char **argv)
 
     cv_bridge::CvImage cv_bridge_img;
 
-    ros::Publisher map_pub   = node.advertise<pcl::PointCloud<pcl::PointXYZ> > ("hdl64e", 1, true);
-    ros::Publisher gps_pub   = node.advertise<sensor_msgs::NavSatFix>  ("oxts/gps", 1, true);
-    ros::Publisher imu_pub   = node.advertise<sensor_msgs::Imu>  ("oxts/imu", 1, true);
-    ros::Publisher disp_pub  = node.advertise<stereo_msgs::DisparityImage>("preprocessed_disparity",1,true);
-    ros::Publisher lanes_pub = node.advertise<road_layout_estimation::msg_lines>("lanes",1,true);
+    ros::Publisher map_pub           = node.advertise<pcl::PointCloud<pcl::PointXYZ> >  ("hdl64e", 1, true);
+    ros::Publisher gps_pub           = node.advertise<sensor_msgs::NavSatFix>           ("oxts/gps", 1, true);
+    ros::Publisher gps_pub_initial   = node.advertise<sensor_msgs::NavSatFix>           ("oxts/gps_initial", 1, true);
+    ros::Publisher imu_pub           = node.advertise<sensor_msgs::Imu>                 ("oxts/imu", 1, true);
+    ros::Publisher disp_pub          = node.advertise<stereo_msgs::DisparityImage>      ("preprocessed_disparity",1,true);
+    ros::Publisher lanes_pub         = node.advertise<road_layout_estimation::msg_lines>("lanes",1,true);
 
     sensor_msgs::NavSatFix  ros_msgGpsFix;
+    sensor_msgs::NavSatFix  ros_msgGpsFixInitial;   // This message contains the first reading of the file
+    bool                    firstGpsData = true;    // Flag to store the ros_msgGpsFixInitial message
     sensor_msgs::Imu        ros_msgImu;
 
     road_layout_estimation::msg_lines    msgLanes;
@@ -1158,9 +1167,17 @@ int main(int argc, char **argv)
                 return 1;
             }
 
-
+            if (firstGpsData)
+            {
+                ROS_DEBUG_STREAM("Setting initial GPS fix at " << endl << ros_msgGpsFix);
+                firstGpsData = false;
+                ros_msgGpsFixInitial = ros_msgGpsFix;
+                ros_msgGpsFixInitial.header.frame_id = "/local_map";
+                ros_msgGpsFixInitial.altitude = 0.0f;
+            }
 
             gps_pub.publish(ros_msgGpsFix);
+            gps_pub_initial.publish(ros_msgGpsFixInitial);
         }
 
         if(options.imu || options.all_data)
