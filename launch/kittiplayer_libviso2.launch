@@ -13,12 +13,13 @@
             args= "-d $(arg directory) -f 1 -a -s -l"
             />
 
-    <!--rosrun image_view stereo_view stereo:=/kitti_player/grayscale image:=image_rect _approximate_sync:=True
+    <!--rosrun image_view stereo_view stereo:=/kitti_player/grayscale image:=image_rect _approximate_sync:=True-->
     <group ns="$(arg camera)" >
             <node   pkg="stereo_image_proc" type="stereo_image_proc" name="stereo_image_proc" required="true">
                     <param name="approximate_sync" value="true"/>
+                    <param name="stereo_algorithm" value="1"/>     <!-- 0=BlockMachingGlobal 1=SemiGlobalBMl -->
             </node>
-    </group>-->
+    </group>
 
     <!--This transform is also defined in the RLE launchers, useless-->
     <!--    <node pkg="tf" type="static_transform_publisher" name="visual_odometry_camera_frame_to_visual_odometry_car_frame"
