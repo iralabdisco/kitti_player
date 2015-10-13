@@ -320,7 +320,7 @@ std_msgs::Header parseTime(string timestamp)
     //                    0123456789012345678
     struct tm t = {0};  // Initalize to all 0's
     t.tm_year = boost::lexical_cast<int>(timestamp.substr(0,4)) - 1900;
-    t.tm_mon  = boost::lexical_cast<int>(timestamp.substr(5,2));
+    t.tm_mon  = boost::lexical_cast<int>(timestamp.substr(5,2)) - 1;
     t.tm_mday = boost::lexical_cast<int>(timestamp.substr(8,2));
     t.tm_hour = boost::lexical_cast<int>(timestamp.substr(11,2));
     t.tm_min  = boost::lexical_cast<int>(timestamp.substr(14,2));
