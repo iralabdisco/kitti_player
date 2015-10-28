@@ -945,7 +945,11 @@ int main(int argc, char **argv)
             //msgSingleLaneInfo;
             string file=dir_laneDetections+boost::str(boost::format("%010d") % entries_played )+".txt";
             if(getLaneDetection(file,&msgLanes))
+            {
+                msgLanes.header.stamp    = current_timestamp;
+                msgLanes.header.frame_id = ros::this_node::getName();
                 lanes_pub.publish(msgLanes);
+            }
 
             if (options.viewer)
             {

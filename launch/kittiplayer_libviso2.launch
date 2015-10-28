@@ -29,7 +29,7 @@
                     <param name="disparity_range"            value="112"  />    <!-- Number of disparities to search, pixels-->
                     <param name="prefilter_size"             value="5"  />      <!-- Normalization window size, pixels-->
                     <param name="prefilter_cap "             value="63" />      <!-- Bound on normalized pixel values-->
-                    <param name="min_disparity"              value="-35"  />    <!-- Disparity to begin search at, pixels (may be negative)-->
+                    <param name="min_disparity"              value="0"  />    <!-- Disparity to begin search at, pixels (may be negative)-->
                     <param name="texture_threshold"          value="100"/>      <!-- Filter out if SAD window response does not exceed texture threshold-->
                     <param name="uniqueness_ratio"           value="5"  />      <!-- Filter out if best match does not sufficiently exceed the next-best match-->
                     <param name="speckle_size"               value="196"/>      <!-- Reject regions smaller than this size, pixels-->
