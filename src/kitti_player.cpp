@@ -407,6 +407,8 @@ int getLaneDetection(string infile, road_layout_estimation::msg_lines *msg_lines
         }
     }
 
+    // Number of lines in the file, 1 line 'in the picture' is one row in the file, minus
+    // one, the first, that is the number of "good" (current tracked in good state) lines.
     msg_lines->number_of_lines = index -1 ;
 
     msg_lines->width = abs(last_left_detection) + abs(last_right_detection);
