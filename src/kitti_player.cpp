@@ -435,7 +435,11 @@ int getLaneDetection(string infile, road_layout_estimation::msg_lines *msg_lines
     // one, the first, that is the number of "good" (current tracked in good state) lines.
     msg_lines->number_of_lines = index -1 ;
 
-    msg_lines->width = abs(last_left_detection) + abs(last_right_detection);
+    if (msg_lines->goodLines > 1)
+        msg_lines->width = abs(last_left_detection) + abs(last_right_detection);
+    else
+        msg_lines->width = abs(last_left_detection);
+
     msg_lines->naive_width = abs(naive_last_left_detection) + abs(naive_last_right_detection);
     msg_lines->way_id = 0; ///WARNING this value is not used yet.
 
