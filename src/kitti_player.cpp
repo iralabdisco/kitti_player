@@ -1023,15 +1023,12 @@ int main(int argc, char **argv)
                 lanes_pub.publish(msgLanes);
             }
 
-            if (options.viewer)
+            if (options.viewDisparities)
             {
-                if (options.viewDisparities)
-                {
-                    full_filename_laneProjected = dir_laneProjected + boost::str(boost::format("%010d") % entries_played ) + ".png";
-                    cv_laneProjected = cv::imread(full_filename_laneProjected, CV_LOAD_IMAGE_UNCHANGED);
-                    cv::imshow("Reprojection of Detected Lines",cv_laneProjected);
-                    cv::waitKey(5);
-                }
+                full_filename_laneProjected = dir_laneProjected + boost::str(boost::format("%010d") % entries_played ) + ".png";
+                cv_laneProjected = cv::imread(full_filename_laneProjected, CV_LOAD_IMAGE_UNCHANGED);
+                cv::imshow("Reprojection of Detected Lines",cv_laneProjected);
+                cv::waitKey(5);
             }
         }
 
