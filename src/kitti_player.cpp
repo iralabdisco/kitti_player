@@ -77,11 +77,19 @@ struct kitti_player_options
     bool    sendTransform;    // publish velodyne TF IMU 3DOF orientation wrt fixed frame
     bool    stereoDisp;       // use precalculated stereoDisparities
     bool    viewDisparities;  // view use precalculated stereoDisparities
+    unsigned int startFrame;  // start the replay at frame ...
 
     /// Extra parameters
     bool    laneDetections;   // send laneDetections;
 };
 
+/**
+ * @brief publish_velodyne
+ * @param pub The ROS publisher as reference
+ * @param infile file with data to publish
+ * @param header Header to use to publish the message
+ * @return 1 if file is correctly readed, 0 otherwise
+ */
 int publish_velodyne(ros::Publisher &pub, string infile, std_msgs::Header *header)
 {
     fstream input(infile.c_str(), ios::in | ios::binary);
@@ -118,26 +126,29 @@ int publish_velodyne(ros::Publisher &pub, string infile, std_msgs::Header *heade
     }
 }
 
-int getCalibration(string dir_root, string camera_name, double* K,std::vector<double> & D,double *R,double* P){
-/*
- *   from: http://kitti.is.tue.mpg.de/kitti/devkit_raw_data.zip
- *   calib_cam_to_cam.txt: Camera-to-camera calibration
- *   --------------------------------------------------
+/**
+ * @brief getCalibration
+ * @param dir_root
+ * @param camera_name
+ * @param K double K[9]  - Calibration Matrix
+ * @param D double D[5]  - Distortion Coefficients
+ * @param R double R[9]  - Rectification Matrix
+ * @param P double P[12] - Projection Matrix Rectified (u,v,w) = P * R * (x,y,z,q)
+ * @return 1: file found, 0: file not found
  *
- *     - S_xx: 1x2 size of image xx before rectification
- *     - K_xx: 3x3 calibration matrix of camera xx before rectification
- *     - D_xx: 1x5 distortion vector of camera xx before rectification
- *     - R_xx: 3x3 rotation matrix of camera xx (extrinsic)
- *     - T_xx: 3x1 translation vector of camera xx (extrinsic)
- *     - S_rect_xx: 1x2 size of image xx after rectification
- *     - R_rect_xx: 3x3 rectifying rotation to make image planes co-planar
- *     - P_rect_xx: 3x4 projection matrix after rectification
-*/
-
-    //    double K[9];         // Calibration Matrix
-    //    double D[5];         // Distortion Coefficients
-    //    double R[9];         // Rectification Matrix
-    //    double P[12];        // Projection Matrix Rectified (u,v,w) = P * R * (x,y,z,q)
+ *  from: http://kitti.is.tue.mpg.de/kitti/devkit_raw_data.zip
+ *  calib_cam_to_cam.txt: Camera-to-camera calibration
+ *
+ *    - S_xx: 1x2 size of image xx before rectification
+ *    - K_xx: 3x3 calibration matrix of camera xx before rectification
+ *    - D_xx: 1x5 distortion vector of camera xx before rectification
+ *    - R_xx: 3x3 rotation matrix of camera xx (extrinsic)
+ *    - T_xx: 3x1 translation vector of camera xx (extrinsic)
+ *    - S_rect_xx: 1x2 size of image xx after rectification
+ *    - R_rect_xx: 3x3 rectifying rotation to make image planes co-planar
+ *    - P_rect_xx: 3x4 projection matrix after rectification
+ */
+int getCalibration(string dir_root, string camera_name, double* K,std::vector<double> & D,double *R,double* P){
 
     string calib_cam_to_cam=dir_root+"calib_cam_to_cam.txt";
     ifstream file_c2c(calib_cam_to_cam.c_str());
@@ -306,10 +317,17 @@ int getIMU(string filename, sensor_msgs::Imu *ros_msgImu, std_msgs::Header *head
     return 1;
 }
 
+
+/**
+ * @brief parseTime
+ * @param timestamp in Epoch
+ * @return std_msgs::Header with input timpestamp converted from file input
+ *
+ * Epoch time conversion
+ * http://www.epochconverter.com/programming/functions-c.php
+ */
 std_msgs::Header parseTime(string timestamp)
 {
-    //Epoch time conversion
-    //http://www.epochconverter.com/programming/functions-c.php
 
     std_msgs::Header header;
 
@@ -334,6 +352,12 @@ std_msgs::Header parseTime(string timestamp)
     return header;
 }
 
+/**
+ * @brief getLaneDetection
+ * @param infile
+ * @param msg_lines
+ * @return
+ */
 int getLaneDetection(string infile, road_layout_estimation::msg_lines *msg_lines)
 {
     ROS_DEBUG_STREAM("Reading lane detections from " << infile);
@@ -426,6 +450,31 @@ int getLaneDetection(string infile, road_layout_estimation::msg_lines *msg_lines
     return true;
 }
 
+/**
+ * @brief main Kitti_player, a player for KITTI raw datasets
+ * @param argc
+ * @param argv
+ * @return 0 and ros::shutdown at the end of the dataset, -1 if errors
+ *
+ * Allowed options:
+ *   -h [ --help ]                       help message
+ *   -d [ --directory  ] arg             *required* - path to the kitti dataset Directory
+ *   -f [ --frequency  ] arg (=1)        set replay Frequency
+ *   -a [ --all        ] [=arg(=1)] (=0) replay All data
+ *   -v [ --velodyne   ] [=arg(=1)] (=0) replay Velodyne data
+ *   -g [ --gps        ] [=arg(=1)] (=0) replay Gps data
+ *   -i [ --imu        ] [=arg(=1)] (=0) replay Imu data
+ *   -G [ --grayscale  ] [=arg(=1)] (=0) replay Stereo Grayscale images
+ *   -C [ --color      ] [=arg(=1)] (=0) replay Stereo Color images
+ *   -V [ --viewer     ] [=arg(=1)] (=0) enable image viewer
+ *   -T [ --timestamps ] [=arg(=1)] (=0) use KITTI timestamps
+ *   -s [ --stereoDisp ] [=arg(=1)] (=0) use pre-calculated disparities
+ *   -D [ --viewDisp   ] [=arg(=1)] (=0) view loaded disparity images
+ *   -l [ --laneDetect ] [=arg(=1)] (=0) send extra lanes message
+ *   -F [ --frame      ] [=arg(=0)] (=0) start playing at frame ...
+ *
+ * Datasets can be downloaded from: http://www.cvlibs.net/datasets/kitti/raw_data.php
+ */
 int main(int argc, char **argv)
 {
     kitti_player_options options;
@@ -433,20 +482,21 @@ int main(int argc, char **argv)
 
     po::options_description desc("Kitti_player, a player for KITTI raw datasets\nDatasets can be downloaded from: http://www.cvlibs.net/datasets/kitti/raw_data.php\n\nAllowed options",200);
     desc.add_options()
-        ("help,h"                                                                                          ,  "help message")
-        ("directory ,d",  po::value<string>(&options.path)->required()                                     ,  "*required* - path to the kitti dataset Directory")
-        ("frequency ,f",  po::value<float>(&options.frequency)      ->default_value(1.0)                    ,  "set replay Frequency")
-        ("all       ,a",  po::value<bool> (&options.all_data)       ->default_value(0) ->implicit_value(1)   ,  "replay All data")
-        ("velodyne  ,v",  po::value<bool> (&options.velodyne)       ->default_value(0) ->implicit_value(1)   ,  "replay Velodyne data")
-        ("gps       ,g",  po::value<bool> (&options.gps)            ->default_value(0) ->implicit_value(1)   ,  "replay Gps data")
-        ("imu       ,i",  po::value<bool> (&options.imu)            ->default_value(0) ->implicit_value(1)   ,  "replay Imu data")
-        ("grayscale ,G",  po::value<bool> (&options.grayscale)      ->default_value(0) ->implicit_value(1)   ,  "replay Stereo Grayscale images")
-        ("color     ,C",  po::value<bool> (&options.color)          ->default_value(0) ->implicit_value(1)   ,  "replay Stereo Color images")
-        ("viewer    ,V",  po::value<bool> (&options.viewer)         ->default_value(0) ->implicit_value(1)   ,  "enable image viewer")
-        ("timestamps,T",  po::value<bool> (&options.timestamps)     ->default_value(0) ->implicit_value(1)   ,  "use KITTI timestamps")
-        ("stereoDisp,s",  po::value<bool> (&options.stereoDisp)     ->default_value(0) ->implicit_value(1)   ,  "use pre-calculated disparities")
-        ("viewDisp  ,D ", po::value<bool> (&options.viewDisparities)->default_value(0) ->implicit_value(1)   ,  "view loaded disparity images")
-        ("laneDetect,l",  po::value<bool> (&options.laneDetections) ->default_value(0) ->implicit_value(1)   ,  "send extra lanes message")
+        ("help,h"                                                                                                    ,  "help message")
+        ("directory ,d",  po::value<string>       (&options.path)->required()                                        ,  "*required* - path to the kitti dataset Directory")
+        ("frequency ,f",  po::value<float>        (&options.frequency)      ->default_value(1.0)                     ,  "set replay Frequency")
+        ("all       ,a",  po::value<bool>         (&options.all_data)       ->default_value(0) ->implicit_value(1)   ,  "replay All data")
+        ("velodyne  ,v",  po::value<bool>         (&options.velodyne)       ->default_value(0) ->implicit_value(1)   ,  "replay Velodyne data")
+        ("gps       ,g",  po::value<bool>         (&options.gps)            ->default_value(0) ->implicit_value(1)   ,  "replay Gps data")
+        ("imu       ,i",  po::value<bool>         (&options.imu)            ->default_value(0) ->implicit_value(1)   ,  "replay Imu data")
+        ("grayscale ,G",  po::value<bool>         (&options.grayscale)      ->default_value(0) ->implicit_value(1)   ,  "replay Stereo Grayscale images")
+        ("color     ,C",  po::value<bool>         (&options.color)          ->default_value(0) ->implicit_value(1)   ,  "replay Stereo Color images")
+        ("viewer    ,V",  po::value<bool>         (&options.viewer)         ->default_value(0) ->implicit_value(1)   ,  "enable image viewer")
+        ("timestamps,T",  po::value<bool>         (&options.timestamps)     ->default_value(0) ->implicit_value(1)   ,  "use KITTI timestamps")
+        ("stereoDisp,s",  po::value<bool>         (&options.stereoDisp)     ->default_value(0) ->implicit_value(1)   ,  "use pre-calculated disparities")
+        ("viewDisp  ,D ", po::value<bool>         (&options.viewDisparities)->default_value(0) ->implicit_value(1)   ,  "view loaded disparity images")
+        ("laneDetect,l",  po::value<bool>         (&options.laneDetections) ->default_value(0) ->implicit_value(1)   ,  "send extra lanes message")
+        ("frame     ,F",  po::value<unsigned int> (&options.startFrame)     ->default_value(0) ->implicit_value(0)   ,  "start playing at frame...")
     ;
 
     try // parse options
@@ -492,7 +542,7 @@ int main(int argc, char **argv)
         cout << "    └── calib_cam_to_cam.txt  " << endl << endl;
 
         ROS_WARN_STREAM("Parse error, shutting down node\n");
-        return 1;
+        return -1;
     }
 
     ros::init(argc, argv, "kitti_player");
@@ -594,6 +644,7 @@ int main(int argc, char **argv)
     if (!(options.all_data || options.color || options.gps || options.grayscale || options.imu || options.velodyne))
     {
         ROS_WARN_STREAM("Job finished without playing the dataset. No 'publishing' parameters provided");
+        node.shutdown();
         return 1;
     }
 
@@ -665,7 +716,8 @@ int main(int argc, char **argv)
         )
     {
         ROS_ERROR("Incorrect tree directory , use --help for details");
-        return 1;
+        node.shutdown();
+        return -1;
     }
     else
     {
@@ -797,6 +849,19 @@ int main(int argc, char **argv)
         }
     }
 
+    // Check options.startFrame and total_entries
+    if (options.startFrame > total_entries)
+    {
+        ROS_ERROR("Error, start number > total entries in the dataset");
+        node.shutdown();
+        return -1;
+    }
+    else
+    {
+        entries_played = options.startFrame;
+        ROS_INFO_STREAM("The entry point (frame number) is: " << entries_played);
+    }
+
     if(options.viewer)
     {
         ROS_INFO_STREAM("Opening CV viewer(s)");
@@ -866,7 +931,7 @@ int main(int argc, char **argv)
         {
             ROS_ERROR_STREAM("Error reading CAMERA02/CAMERA03 calibration");
             node.shutdown();
-            return 1;
+            return -1;
         }
         //Assume same height/width for the camera pair
         full_filename_image02 = dir_image02 + boost::str(boost::format("%010d") % 0 ) + ".png";
@@ -885,7 +950,7 @@ int main(int argc, char **argv)
         {
             ROS_ERROR_STREAM("Error reading CAMERA00/CAMERA01 calibration");
             node.shutdown();
-            return 1;
+            return -1;
         }
         //Assume same height/width for the camera pair
         full_filename_image00 = dir_image00 + boost::str(boost::format("%010d") % 0 ) + ".png";
@@ -898,6 +963,7 @@ int main(int argc, char **argv)
     boost::progress_display progress(total_entries) ;
     double cv_min, cv_max=0.0f;
 
+    // This is the main KITTI_PLAYER Loop
     do
     {
         // single timestamp for all published stuff
@@ -978,7 +1044,7 @@ int main(int argc, char **argv)
                 ROS_ERROR_STREAM("Error reading color images (02 & 03)");
                 ROS_ERROR_STREAM(full_filename_image02 << endl << full_filename_image03);
                 node.shutdown();
-                return 1;
+                return -1;
             }
 
             if(options.viewer)
@@ -1005,7 +1071,8 @@ int main(int argc, char **argv)
                 if (!timestamps.is_open())
                 {
                     ROS_ERROR_STREAM("Fail to open " << timestamps);
-                    return 1;
+                    node.shutdown();
+                    return -1;
                 }
                 timestamps.seekg(30*entries_played);
                 getline(timestamps,str_support);
@@ -1028,7 +1095,8 @@ int main(int argc, char **argv)
                 if (!timestamps.is_open())
                 {
                     ROS_ERROR_STREAM("Fail to open " << timestamps);
-                    return 1;
+                    node.shutdown();
+                    return -1;
                 }
                 timestamps.seekg(30*entries_played);
                 getline(timestamps,str_support);
@@ -1057,7 +1125,7 @@ int main(int argc, char **argv)
                 ROS_ERROR_STREAM("Error reading color images (00 & 01)");
                 ROS_ERROR_STREAM(full_filename_image00 << endl << full_filename_image01);
                 node.shutdown();
-                return 1;
+                return -1;
             }
 
             if(options.viewer)
@@ -1084,7 +1152,8 @@ int main(int argc, char **argv)
                 if (!timestamps.is_open())
                 {
                     ROS_ERROR_STREAM("Fail to open " << timestamps);
-                    return 1;
+                    node.shutdown();
+                    return -1;
                 }
                 timestamps.seekg(30*entries_played);
                 getline(timestamps,str_support);
@@ -1107,7 +1176,8 @@ int main(int argc, char **argv)
                 if (!timestamps.is_open())
                 {
                     ROS_ERROR_STREAM("Fail to open " << timestamps);
-                    return 1;
+                    node.shutdown();
+                    return -1;
                 }
                 timestamps.seekg(30*entries_played);
                 getline(timestamps,str_support);
@@ -1136,7 +1206,8 @@ int main(int argc, char **argv)
                 if (!timestamps.is_open())
                 {
                     ROS_ERROR_STREAM("Fail to open " << timestamps);
-                    return 1;
+                    node.shutdown();
+                    return -1;
                 }
                 timestamps.seekg(30*entries_played);
                 getline(timestamps,str_support);
@@ -1158,7 +1229,7 @@ int main(int argc, char **argv)
                 {
                     ROS_ERROR_STREAM("Fail to open " << timestamps);
                     node.shutdown();
-                    return 1;
+                    return -1;
                 }
                 timestamps.seekg(30*entries_played);
                 getline(timestamps,str_support);
@@ -1170,7 +1241,7 @@ int main(int argc, char **argv)
             {
                 ROS_ERROR_STREAM("Fail to open " << full_filename_oxts);
                 node.shutdown();
-                return 1;
+                return -1;
             }
 
             if (firstGpsData)
@@ -1197,7 +1268,7 @@ int main(int argc, char **argv)
                 {
                     ROS_ERROR_STREAM("Fail to open " << timestamps);
                     node.shutdown();
-                    return 1;
+                    return -1;
                 }
                 timestamps.seekg(30*entries_played);
                 getline(timestamps,str_support);
@@ -1210,7 +1281,7 @@ int main(int argc, char **argv)
             {
                 ROS_ERROR_STREAM("Fail to open " << full_filename_oxts);
                 node.shutdown();
-                return 1;
+                return -1;
             }
             imu_pub.publish(ros_msgImu);
 
