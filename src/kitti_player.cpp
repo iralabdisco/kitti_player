@@ -33,6 +33,7 @@
 #include <boost/tokenizer.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <image_transport/image_transport.h>
+#include "ira_open_street_map/latlon_2_xy.h"
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <pcl_conversions/pcl_conversions.h>
@@ -46,10 +47,16 @@
 #include <sensor_msgs/NavSatFix.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <stereo_msgs/DisparityImage.h>
+#include <std_msgs/Bool.h>
 #include <tf/LinearMath/Transform.h>
 #include <tf/transform_broadcaster.h>
 #include <tf/transform_listener.h>
 #include <time.h>
+
+/// EXTRA messages, not from KITTI
+/// Inser here further detectors & features to be published
+#include <road_layout_estimation/msg_lines.h>
+#include <road_layout_estimation/msg_lineInfo.h>
 
 using namespace std;
 using namespace pcl;
@@ -71,9 +78,33 @@ struct kitti_player_options
     bool    viewer;           // enable CV viewer
     bool    timestamps;       // use KITTI timestamps;
     bool    sendTransform;    // publish velodyne TF IMU 3DOF orientation wrt fixed frame
+    bool    stereoDisp;       // use precalculated stereoDisparities
+    bool    viewDisparities;  // view use precalculated stereoDisparities
+    bool    synchMode;        // start with synchMode on (wait for message to send next frame)
     unsigned int startFrame;  // start the replay at frame ...
     string gpsReferenceFrame; // publish GPS points into RVIZ as RVIZ Markers
+
+    /// Extra parameters
+    bool    laneDetections;   // send laneDetections;
 };
+
+
+bool waitSynch = false; /// Synch mode variable, refs #600
+
+/**
+ * @brief synchCallback
+ * @param msg (boolean)
+ *
+ * if a TRUE message is received, TRUE is interpreted as "publish a new frame".
+ * Then waitSynh variable is set to FALSE, and an iteration of the KittiPlayer
+ * main loop is executed.
+ */
+void synchCallback(const std_msgs::Bool::ConstPtr& msg)
+{
+    ROS_INFO_STREAM("Synch received");
+    if (msg->data)
+        waitSynch = false;
+}
 
 /**
  * @brief publish_velodyne
@@ -152,7 +183,7 @@ int getCalibration(string dir_root, string camera_name, double* K, std::vector<d
     ROS_INFO_STREAM("Reading camera" << camera_name << " calibration from " << calib_cam_to_cam);
 
     typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
-    boost::char_separator<char> sep {" "};
+    boost::char_separator<char> sep{" "};
 
     string line = "";
     char index = 0;
@@ -231,7 +262,7 @@ int getGPS(string filename, sensor_msgs::NavSatFix *ros_msgGpsFix, std_msgs::Hea
     ROS_DEBUG_STREAM("Reading GPS data from oxts file: " << filename );
 
     typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
-    boost::char_separator<char> sep {" "};
+    boost::char_separator<char> sep{" "};
 
     string line = "";
 
@@ -272,7 +303,7 @@ int getIMU(string filename, sensor_msgs::Imu *ros_msgImu, std_msgs::Header *head
     ROS_DEBUG_STREAM("Reading IMU data from oxts file: " << filename );
 
     typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
-    boost::char_separator<char> sep {" "};
+    boost::char_separator<char> sep{" "};
 
     string line = "";
 
@@ -413,7 +444,139 @@ std_msgs::Header parseTime(string timestamp)
     return header;
 }
 
+/**
+ * @brief getLaneDetection
+ * @param infile
+ * @param msg_lines
+ * @return
+ */
+int getLaneDetection(string infile, road_layout_estimation::msg_lines *msg_lines)
+{
+    ROS_DEBUG_STREAM("Reading lane detections from " << infile);
 
+    ifstream detection_file(infile);
+    if (!detection_file.is_open())
+        return false;
+
+    msg_lines->number_of_lines = 0;
+    msg_lines->goodLines       = 0;
+    msg_lines->width           = 0;
+    //msg_lines->oneway          = 0;
+    msg_lines->naive_width     = 0;
+    msg_lines->lines.clear();
+
+    typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
+    boost::char_separator<char> sep{"\t"};  // TAB
+
+    string  line = "";
+    char    index = 0;
+    double  last_right_detection = std::numeric_limits<double>::min();          //uses *ONLY* the valid lines
+    double  last_left_detection  = std::numeric_limits<double>::max();          //uses *ONLY* the valid lines
+    double  naive_last_right_detection = std::numeric_limits<double>::min();    //uses all values, even if the line is not valid
+    double  naive_last_left_detection  = std::numeric_limits<double>::max();    //uses all values, even if the line is not valid
+
+    while (getline(detection_file, line))
+    {
+        // Parse string phase 1, tokenize it using Boost.
+        tokenizer tok(line, sep);
+
+        if (index == 0)
+        {
+            vector<string> s(tok.begin(), tok.end());
+            msg_lines->goodLines = boost::lexical_cast<int>(s[0]);
+
+            index++;
+        }
+        else
+        {
+            road_layout_estimation::msg_lineInfo line;
+
+            vector<string> s(tok.begin(), tok.end());
+
+            if (s.size() != 3)
+            {
+                ROS_WARN_STREAM("Unexpected file format, can't read");
+                return false;
+            }
+
+            line.isValid = boost::lexical_cast<bool>  (s[0]);
+            line.counter = boost::lexical_cast<int>   (s[1]);
+            line.offset  = boost::lexical_cast<float> (s[2]);
+
+            msg_lines->lines.push_back(line);
+
+            if (line.isValid)
+            {
+                if (line.offset  > last_right_detection)
+                    last_right_detection = line.offset;
+
+                if (line.offset  < last_left_detection)
+                    last_left_detection = line.offset;
+            }
+
+            if (line.offset  > naive_last_right_detection)
+                naive_last_right_detection = line.offset;
+            if (line.offset  < naive_last_left_detection)
+                naive_last_left_detection = line.offset;
+
+            index++;
+        }
+    }
+
+    // Number of lines in the file, 1 line 'in the picture' is one row in the file, minus
+    // one, the first, that is the number of "good" (current tracked in good state) lines.
+    msg_lines->number_of_lines = index - 1 ;
+
+    if (msg_lines->goodLines > 1)
+    {
+        if (((last_left_detection > 0) && (last_right_detection > 0)) ||
+                ((last_left_detection < 0) && (last_right_detection < 0)))
+            msg_lines->width  = abs(last_left_detection - last_right_detection);
+        else
+            msg_lines->width = abs(last_left_detection) + abs(last_right_detection);
+    }
+    else
+        msg_lines->width = abs(last_left_detection);
+
+    msg_lines->naive_width = abs(naive_last_left_detection) + abs(naive_last_right_detection);
+    msg_lines->way_id = 0; ///WARNING this value is not used yet.
+
+    if (msg_lines->width == std::numeric_limits<double>::max())
+        msg_lines->width = 0.0f;
+
+    if (msg_lines->naive_width == std::numeric_limits<double>::max())
+        msg_lines->naive_width = 0.0f;
+
+    ROS_DEBUG_STREAM("Number of LANEs: " << msg_lines->number_of_lines << "\tNumber of good LINEs " << msg_lines->goodLines);
+    ROS_DEBUG_STREAM("... getLaneDetection ok");
+    return true;
+}
+
+/**
+ * @brief main Kitti_player, a player for KITTI raw datasets
+ * @param argc
+ * @param argv
+ * @return 0 and ros::shutdown at the end of the dataset, -1 if errors
+ *
+ * Allowed options:
+ *   -h [ --help ]                       help message
+ *   -d [ --directory  ] arg             *required* - path to the kitti dataset Directory
+ *   -f [ --frequency  ] arg (=1)        set replay Frequency
+ *   -a [ --all        ] [=arg(=1)] (=0) replay All data
+ *   -v [ --velodyne   ] [=arg(=1)] (=0) replay Velodyne data
+ *   -g [ --gps        ] [=arg(=1)] (=0) replay Gps data
+ *   -i [ --imu        ] [=arg(=1)] (=0) replay Imu data
+ *   -G [ --grayscale  ] [=arg(=1)] (=0) replay Stereo Grayscale images
+ *   -C [ --color      ] [=arg(=1)] (=0) replay Stereo Color images
+ *   -V [ --viewer     ] [=arg(=1)] (=0) enable image viewer
+ *   -T [ --timestamps ] [=arg(=1)] (=0) use KITTI timestamps
+ *   -s [ --stereoDisp ] [=arg(=1)] (=0) use pre-calculated disparities
+ *   -D [ --viewDisp   ] [=arg(=1)] (=0) view loaded disparity images
+ *   -l [ --laneDetect ] [=arg(=1)] (=0) send extra lanes message
+ *   -F [ --frame      ] [=arg(=0)] (=0) start playing at frame ...
+ *
+ * Datasets can be downloaded from: http://www.cvlibs.net/datasets/kitti/raw_data.php
+ */
 int main(int argc, char **argv)
 {
     kitti_player_options options;
@@ -421,19 +584,23 @@ int main(int argc, char **argv)
 
     po::options_description desc("Kitti_player, a player for KITTI raw datasets\nDatasets can be downloaded from: http://www.cvlibs.net/datasets/kitti/raw_data.php\n\nAllowed options", 200);
     desc.add_options()
-    ("help,h"                                                                                          ,  "help message")
-    ("directory ,d",  po::value<string>(&options.path)->required()                                     ,  "*required* - path to the kitti dataset Directory")
-    ("frequency ,f",  po::value<float>(&options.frequency)      ->default_value(1.0)                    ,  "set replay Frequency")
-    ("all       ,a",  po::value<bool> (&options.all_data)       ->default_value(0) ->implicit_value(1)   ,  "replay All data")
-    ("velodyne  ,v",  po::value<bool> (&options.velodyne)       ->default_value(0) ->implicit_value(1)   ,  "replay Velodyne data")
-    ("gps       ,g",  po::value<bool> (&options.gps)            ->default_value(0) ->implicit_value(1)   ,  "replay Gps data")
-    ("imu       ,i",  po::value<bool> (&options.imu)            ->default_value(0) ->implicit_value(1)   ,  "replay Imu data")
-    ("grayscale ,G",  po::value<bool> (&options.grayscale)      ->default_value(0) ->implicit_value(1)   ,  "replay Stereo Grayscale images")
-    ("color     ,C",  po::value<bool> (&options.color)          ->default_value(0) ->implicit_value(1)   ,  "replay Stereo Color images")
-    ("viewer    ,V",  po::value<bool> (&options.viewer)         ->default_value(0) ->implicit_value(1)   ,  "enable image viewer")
-    ("timestamps,T",  po::value<bool> (&options.timestamps)     ->default_value(0) ->implicit_value(1)   ,  "use KITTI timestamps")
-    ("frame     ,F",  po::value<unsigned int> (&options.startFrame)     ->default_value(0) ->implicit_value(0)   ,  "start playing at frame...")
-
+    ("help,h"                                                                                                    ,  "help message")
+    ("directory ,d",  po::value<string>       (&options.path)->required()                                        ,  "*required* - path to the kitti dataset Directory")
+    ("frequency ,f",  po::value<float>        (&options.frequency)        ->default_value(1.0)                     ,  "set replay Frequency")
+    ("all       ,a",  po::value<bool>         (&options.all_data)         ->default_value(0) ->implicit_value(1)   ,  "replay All data")
+    ("velodyne  ,v",  po::value<bool>         (&options.velodyne)         ->default_value(0) ->implicit_value(1)   ,  "replay Velodyne data")
+    ("gps       ,g",  po::value<bool>         (&options.gps)              ->default_value(0) ->implicit_value(1)   ,  "replay Gps data")
+    ("imu       ,i",  po::value<bool>         (&options.imu)              ->default_value(0) ->implicit_value(1)   ,  "replay Imu data")
+    ("grayscale ,G",  po::value<bool>         (&options.grayscale)        ->default_value(0) ->implicit_value(1)   ,  "replay Stereo Grayscale images")
+    ("color     ,C",  po::value<bool>         (&options.color)            ->default_value(0) ->implicit_value(1)   ,  "replay Stereo Color images")
+    ("viewer    ,V",  po::value<bool>         (&options.viewer)           ->default_value(0) ->implicit_value(1)   ,  "enable image viewer")
+    ("timestamps,T",  po::value<bool>         (&options.timestamps)       ->default_value(0) ->implicit_value(1)   ,  "use KITTI timestamps")
+    ("stereoDisp,s",  po::value<bool>         (&options.stereoDisp)       ->default_value(0) ->implicit_value(1)   ,  "use pre-calculated disparities")
+    ("viewDisp  ,D ", po::value<bool>         (&options.viewDisparities)  ->default_value(0) ->implicit_value(1)   ,  "view loaded disparity images")
+    ("laneDetect,l",  po::value<bool>         (&options.laneDetections)   ->default_value(0) ->implicit_value(1)   ,  "send extra lanes message")
+    ("frame     ,F",  po::value<unsigned int> (&options.startFrame)       ->default_value(0) ->implicit_value(0)   ,  "start playing at frame...")
+    ("gpsPoints ,p",  po::value<string>       (&options.gpsReferenceFrame)->default_value("")  ,  "publish GPS points into RVIZ as RVIZ Markers")
+    ("synchMode ,S",  po::value<bool>         (&options.synchMode)        ->default_value(0) ->implicit_value(1)   ,  "Enable Synch mode (wait for signal to load next frame")
     ;
 
     try // parse options
@@ -510,6 +677,12 @@ int main(int argc, char **argv)
     string dir_image03          ;
     string full_filename_image03;
     string dir_timestamp_image03;
+    string dir_image04          ;
+    string full_filename_image04;
+    string dir_laneDetections   ;
+    string full_filename_laneDetections;
+    string dir_laneProjected    ;
+    string full_filename_laneProjected;
     string dir_oxts             ;
     string full_filename_oxts;
     string dir_timestamp_oxts;
@@ -521,6 +694,8 @@ int main(int argc, char **argv)
     cv::Mat cv_image01;
     cv::Mat cv_image02;
     cv::Mat cv_image03;
+    cv::Mat cv_image04;
+    cv::Mat cv_laneProjected;
     std_msgs::Header header_support;
 
     image_transport::ImageTransport it(node);
@@ -534,6 +709,7 @@ int main(int argc, char **argv)
     sensor_msgs::Image ros_msg02;
     sensor_msgs::Image ros_msg03;
 
+
 //    sensor_msgs::CameraInfo ros_cameraInfoMsg;
     sensor_msgs::CameraInfo ros_cameraInfoMsg_camera00;
     sensor_msgs::CameraInfo ros_cameraInfoMsg_camera01;
@@ -546,11 +722,17 @@ int main(int argc, char **argv)
     ros::Publisher gps_pub           = node.advertise<sensor_msgs::NavSatFix>           ("oxts/gps", 1, true);
     ros::Publisher gps_pub_initial   = node.advertise<sensor_msgs::NavSatFix>           ("oxts/gps_initial", 1, true);
     ros::Publisher imu_pub           = node.advertise<sensor_msgs::Imu>                 ("oxts/imu", 1, true);
+    ros::Publisher disp_pub          = node.advertise<stereo_msgs::DisparityImage>      ("preprocessed_disparity", 1, true);
+    ros::Publisher lanes_pub         = node.advertise<road_layout_estimation::msg_lines>("lanes", 1, true);
+
     sensor_msgs::NavSatFix  ros_msgGpsFix;
     sensor_msgs::NavSatFix  ros_msgGpsFixInitial;   // This message contains the first reading of the file
     bool                    firstGpsData = true;    // Flag to store the ros_msgGpsFixInitial message
     sensor_msgs::Imu        ros_msgImu;
 
+    ros::Subscriber sub = node.subscribe("/kitti_player/synch", 1, synchCallback);    // refs #600
+
+    road_layout_estimation::msg_lines    msgLanes;
 
     if (vm.count("help"))
     {
@@ -593,13 +775,17 @@ int main(int argc, char **argv)
     dir_image01          = options.path;
     dir_image02          = options.path;
     dir_image03          = options.path;
+    dir_image04          = options.path;
     dir_oxts             = options.path;
     dir_velodyne_points  = options.path;
+    dir_image04          = options.path;
+
     (*(options.path.end() - 1) != '/' ? dir_root            = options.path + "/"                      : dir_root            = options.path);
     (*(options.path.end() - 1) != '/' ? dir_image00         = options.path + "/image_00/data/"        : dir_image00         = options.path + "image_00/data/");
     (*(options.path.end() - 1) != '/' ? dir_image01         = options.path + "/image_01/data/"        : dir_image01         = options.path + "image_01/data/");
     (*(options.path.end() - 1) != '/' ? dir_image02         = options.path + "/image_02/data/"        : dir_image02         = options.path + "image_02/data/");
     (*(options.path.end() - 1) != '/' ? dir_image03         = options.path + "/image_03/data/"        : dir_image03         = options.path + "image_03/data/");
+    (*(options.path.end() - 1) != '/' ? dir_image04         = options.path + "/disparities/"          : dir_image04         = options.path + "disparities/");
     (*(options.path.end() - 1) != '/' ? dir_oxts            = options.path + "/oxts/data/"            : dir_oxts            = options.path + "oxts/data/");
     (*(options.path.end() - 1) != '/' ? dir_velodyne_points = options.path + "/velodyne_points/data/" : dir_velodyne_points = options.path + "velodyne_points/data/");
 
@@ -612,7 +798,10 @@ int main(int argc, char **argv)
 
     (*(options.path.end() - 1) != '/' ? dir_timestamp_velodyne   = options.path + "/velodyne_points/"     : dir_timestamp_velodyne  = options.path + "velodyne_points/");
 
-
+    /// EXTRA
+    /// 01. Lane detections
+    (*(options.path.end() - 1) != '/' ? dir_laneDetections       = options.path + "/lane/"         : dir_laneDetections         = options.path + "lane/");
+    (*(options.path.end() - 1) != '/' ? dir_laneProjected        = options.path + "/all/"          : dir_laneProjected          = options.path + "all/");
 
     // Check all the directories
     if (
@@ -633,7 +822,11 @@ int main(int argc, char **argv)
         ||
         (options.gps            && (   (opendir(dir_oxts.c_str())               == NULL)))
         ||
+        (options.stereoDisp     && (   (opendir(dir_image04.c_str())            == NULL)))
+        ||
         (options.velodyne       && (   (opendir(dir_velodyne_points.c_str())    == NULL)))
+        ||
+        (options.laneDetections && (   (opendir(dir_laneDetections.c_str())    == NULL)))
         ||
         (options.timestamps     && (   (opendir(dir_timestamp_image00.c_str())      == NULL) ||
                                        (opendir(dir_timestamp_image01.c_str())      == NULL) ||
@@ -747,6 +940,36 @@ int main(int argc, char **argv)
             closedir (dir);
             done = true;
         }
+        if (!done && options.stereoDisp)
+        {
+            total_entries = 0;
+            dir = opendir(dir_image04.c_str());
+            while (ent = readdir(dir))
+            {
+                //skip . & ..
+                len = strlen (ent->d_name);
+                //skip . & ..
+                if (len > 2)
+                    total_entries++;
+            }
+            closedir (dir);
+            done = true;
+        }
+        if (!done && options.laneDetections)
+        {
+            total_entries = 0;
+            dir = opendir(dir_laneDetections.c_str());
+            while (ent = readdir(dir))
+            {
+                //skip . & ..
+                len = strlen (ent->d_name);
+                //skip . & ..
+                if (len > 2)
+                    total_entries++;
+            }
+            closedir (dir);
+            done = true;
+        }
     }
 
     // Check options.startFrame and total_entries
@@ -779,6 +1002,14 @@ int main(int argc, char **argv)
             cv::namedWindow("CameraSimulator Grayscale Viewer", CV_WINDOW_AUTOSIZE);
             full_filename_image00 = dir_image00 + boost::str(boost::format("%010d") % 0 ) + ".png";
             cv_image00 = cv::imread(full_filename_image00, CV_LOAD_IMAGE_UNCHANGED);
+            cv::waitKey(5);
+        }
+        if (options.viewDisparities || options.all_data)
+        {
+            ROS_DEBUG_STREAM("viewDisparities||all " << options.grayscale << " " << options.all_data);
+            cv::namedWindow("Reprojection of Detected Lines", CV_WINDOW_AUTOSIZE);
+            full_filename_laneProjected = dir_laneProjected + boost::str(boost::format("%010d") % 0 ) + ".png";
+            cv_laneProjected = cv::imread(full_filename_laneProjected, CV_LOAD_IMAGE_UNCHANGED);
             cv::waitKey(5);
         }
         ROS_INFO_STREAM("Opening CV viewer(s)... OK");
@@ -860,8 +1091,94 @@ int main(int argc, char **argv)
     // This is the main KITTI_PLAYER Loop
     do
     {
+        // this refs #600 synchMode
+        if (options.synchMode)
+        {
+            if (waitSynch == true)
+            {
+                //ROS_DEBUG_STREAM("Waiting for synch...");
+                ros::spinOnce();
+                continue;
+            }
+            else
+            {
+                ROS_DEBUG_STREAM("Run after received synch...");
+                waitSynch = true;
+            }
+        }
+
         // single timestamp for all published stuff
         Time current_timestamp = ros::Time::now();
+
+        if (options.stereoDisp)
+        {
+            // Allocate new disparity image message
+            stereo_msgs::DisparityImagePtr disp_msg = boost::make_shared<stereo_msgs::DisparityImage>();
+
+            full_filename_image04 = dir_image04 + boost::str(boost::format("%010d") % entries_played ) + ".png";
+            cv_image04 = cv::imread(full_filename_image04, CV_LOAD_IMAGE_GRAYSCALE);
+
+            cv::minMaxLoc(cv_image04, &cv_min, &cv_max);
+
+            disp_msg->min_disparity = (int)cv_min;
+            disp_msg->max_disparity = (int)cv_max;
+
+            disp_msg->valid_window.x_offset = 0;  // should be safe, checked!
+            disp_msg->valid_window.y_offset = 0;  // should be safe, checked!
+            disp_msg->valid_window.width    = 0;  // should be safe, checked!
+            disp_msg->valid_window.height   = 0;  // should be safe, checked!
+            disp_msg->T                     = 0;  // should be safe, checked!
+            disp_msg->f                     = 0;  // should be safe, checked!
+            disp_msg->delta_d               = 0;  // should be safe, checked!
+            disp_msg->header.stamp          = current_timestamp;
+            disp_msg->header.frame_id       = ros::this_node::getName();
+            disp_msg->header.seq            = progress.count();
+
+            sensor_msgs::Image& dimage = disp_msg->image;
+            dimage.width  = cv_image04.size().width ;
+            dimage.height = cv_image04.size().height ;
+            dimage.encoding = sensor_msgs::image_encodings::TYPE_32FC1;
+            dimage.step = dimage.width * sizeof(float);
+            dimage.data.resize(dimage.step * dimage.height);
+            cv::Mat_<float> dmat(dimage.height, dimage.width, reinterpret_cast<float*>(&dimage.data[0]), dimage.step);
+
+            cv_image04.convertTo(dmat, dmat.type());
+
+            disp_pub.publish(disp_msg);
+
+        }
+        if (options.laneDetections)
+        {
+            //msgLanes;
+            //msgSingleLaneInfo;
+            string file = dir_laneDetections + boost::str(boost::format("%010d") % entries_played ) + ".txt";
+            if (getLaneDetection(file, &msgLanes))
+            {
+                msgLanes.header.stamp    = current_timestamp;
+                msgLanes.header.frame_id = ros::this_node::getName();
+                lanes_pub.publish(msgLanes);
+            }
+
+            if (options.viewDisparities)
+            {
+                unsigned char offset = 0;
+                full_filename_laneProjected = dir_laneProjected + boost::str(boost::format("%010d") % entries_played ) + ".png";
+                cv_laneProjected = cv::imread(full_filename_laneProjected, CV_LOAD_IMAGE_UNCHANGED);
+                cv::putText(cv_laneProjected, "KittiPlayer", cvPoint(20, 15), CV_FONT_HERSHEY_SIMPLEX, 0.4, cvScalar(0, 255, 0), 1, CV_AA);
+                cv::putText(cv_laneProjected, "Reprojection of Detected Lines - " + file, cvPoint(20, 30), CV_FONT_HERSHEY_SIMPLEX, 0.4, cvScalar(0, 255, 0), 1, CV_AA);
+                cv::putText(cv_laneProjected, "Good Lines: " + std::to_string(int(msgLanes.goodLines)) ,   cvPoint(20, 45), CV_FONT_HERSHEY_SIMPLEX, 0.4, cvScalar(0, 255, 0), 1, CV_AA);
+                for (char i = 0; i < msgLanes.number_of_lines; i++, offset += 15)
+                    cv::putText(cv_laneProjected, "Line " + std::to_string(i + 1) +
+                                " " + std::to_string(msgLanes.lines.at(i).isValid) +
+                                " " + std::to_string(msgLanes.lines.at(i).counter) +
+                                " " + std::to_string(msgLanes.lines.at(i).offset),
+                                cvPoint(20, 60 + offset), CV_FONT_HERSHEY_SIMPLEX, 0.4, cvScalar(0, 255, 0), 1, CV_AA);
+                cv::putText(cv_laneProjected, boost::str(boost::format("%5d") % entries_played ), cvPoint(cv_laneProjected.size().width - 100, 30), CV_FONT_HERSHEY_DUPLEX, 1.0, cvScalar(0, 0, 255), 1, CV_AA);
+                //cv::putText(cv_laneProjected, "",   cvPoint(20,30), CV_FONT_HERSHEY_SIMPLEX, 0.4, cvScalar(0,255,0), 1, CV_AA);
+                cv::imshow("Reprojection of Detected Lines", cv_laneProjected);
+                cv::waitKey(5);
+            }
+        }
 
         if (options.color || options.all_data)
         {
@@ -1184,6 +1501,8 @@ int main(int argc, char **argv)
             cv::destroyWindow("CameraSimulator Color Viewer");
         if (options.grayscale || options.all_data)
             cv::destroyWindow("CameraSimulator Grayscale Viewer");
+        if (options.viewDisparities)
+            cv::destroyWindow("Reprojection of Detected Lines");
         ROS_INFO_STREAM(" Closing CV viewer(s)... OK");
     }
 
@@ -1193,3 +1512,4 @@ int main(int argc, char **argv)
 
     return 0;
 }
+
