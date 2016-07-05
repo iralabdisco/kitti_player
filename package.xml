@@ -14,12 +14,6 @@
 
 	<buildtool_depend>catkin</buildtool_depend>
 
-	<!--
-	<depend package="bullet"/>
-	<depend package="sensor_msgs"/>
-	<depend package="rospy"/>
-	-->
-
 	<build_depend>roscpp</build_depend>
 	<build_depend>tf</build_depend>
 	<build_depend>message_filters</build_depend>
