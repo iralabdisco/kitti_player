@@ -183,7 +183,7 @@ int getCalibration(string dir_root, string camera_name, double* K, std::vector<d
     ROS_INFO_STREAM("Reading camera" << camera_name << " calibration from " << calib_cam_to_cam);
 
     typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
-    boost::char_separator<char> sep{" "};
+    boost::char_separator<char> sep {" "};
 
     string line = "";
     char index = 0;
@@ -262,7 +262,7 @@ int getGPS(string filename, sensor_msgs::NavSatFix *ros_msgGpsFix, std_msgs::Hea
     ROS_DEBUG_STREAM("Reading GPS data from oxts file: " << filename );
 
     typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
-    boost::char_separator<char> sep{" "};
+    boost::char_separator<char> sep {" "};
 
     string line = "";
 
@@ -303,7 +303,7 @@ int getIMU(string filename, sensor_msgs::Imu *ros_msgImu, std_msgs::Header *head
     ROS_DEBUG_STREAM("Reading IMU data from oxts file: " << filename );
 
     typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
-    boost::char_separator<char> sep{" "};
+    boost::char_separator<char> sep {" "};
 
     string line = "";
 
@@ -466,7 +466,7 @@ int getLaneDetection(string infile, road_layout_estimation::msg_lines *msg_lines
     msg_lines->lines.clear();
 
     typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
-    boost::char_separator<char> sep{"\t"};  // TAB
+    boost::char_separator<char> sep {"\t"}; // TAB
 
     string  line = "";
     char    index = 0;
@@ -1489,7 +1489,9 @@ int main(int argc, char **argv)
 
         ++progress;
         entries_played++;
-        loop_rate.sleep();
+
+        if (!options.synchMode)
+            loop_rate.sleep();
     }
     while (entries_played <= total_entries - 1 && ros::ok());
 
