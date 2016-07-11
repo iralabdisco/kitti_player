@@ -9,7 +9,7 @@
 
     <node   name="kitti_player" pkg="kitti_player" type="kitti_player"
             required="true"
-            args= "-d $(arg directory) -a -p map -F 1 -S"
+            args= "-d $(arg directory) -a -p map -F 1 -D -V"
             output="screen"
             />
 
@@ -25,18 +25,20 @@
 KITTIPLAYER command line
 http://projects.ira.disco.unimib.it/projects/kitti_player/wiki/Wiki
 
-help            h	help message
-directory	d	required - path to the kitti dataset Director
-frequency	f	set replay Frequency
-all             a	replay All data
-velodyne	v	replay Velodyne data
-gps             g	replay Gps data
-imu             i	replay Imu data
-grayscale	G	replay Stereo Grayscale images
-color           C	replay Stereo Color images
-viewer          V	enable image viewer
-timestamps	T	use KITTI timestamps
-frame           F       start playing at frame ...
-publish RTK     p       publish GPS/RTK markers to RVIZ, having reference frame as <reference_frame> [example: -p map]
-synchMode       S       Enable Synch mode (wait for signal to load next frame [std_msgs/Bool "data: true"]
+help           h    help message
+directory      d    *required* - path to the kitti dataset Directory
+frequency      f    set replay Frequency
+all            a    replay All data
+velodyne       v    replay Velodyne data
+gps            g    replay Gps data
+imu            i    replay Imu data
+grayscale      G    replay Stereo Grayscale images
+color          C    replay Stereo Color images
+viewer         V    enable image viewer
+timestamps     T    use KITTI timestamps
+stereoDisp     s    use pre-calculated disparities
+viewDisp       D    view loaded disparity images
+frame          F    start playing at frame...
+gpsPoints      p    publish GPS/RTK markers to RVIZ, having reference frame as <reference_frame> [example: -p map]
+synchMode      S    Enable Synch mode (wait for signal to load next frame [std_msgs/Bool "data: true"]
 -->

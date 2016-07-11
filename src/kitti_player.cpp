@@ -479,8 +479,8 @@ int main(int argc, char **argv)
     ("stereoDisp,s",  po::value<bool>         (&options.stereoDisp)       ->default_value(0) ->implicit_value(1)   ,  "use pre-calculated disparities")
     ("viewDisp  ,D ", po::value<bool>         (&options.viewDisparities)  ->default_value(0) ->implicit_value(1)   ,  "view loaded disparity images")
     ("frame     ,F",  po::value<unsigned int> (&options.startFrame)       ->default_value(0) ->implicit_value(0)   ,  "start playing at frame...")
-    ("gpsPoints ,p",  po::value<string>       (&options.gpsReferenceFrame)->default_value("")  ,  "publish GPS points into RVIZ as RVIZ Markers")
-    ("synchMode ,S",  po::value<bool>         (&options.synchMode)        ->default_value(0) ->implicit_value(1)   ,  "Enable Synch mode (wait for signal to load next frame")
+    ("gpsPoints ,p",  po::value<string>       (&options.gpsReferenceFrame)->default_value("")                      ,  "publish GPS/RTK markers to RVIZ, having reference frame as <reference_frame> [example: -p map]")
+    ("synchMode ,S",  po::value<bool>         (&options.synchMode)        ->default_value(0) ->implicit_value(1)   ,  "Enable Synch mode (wait for signal to load next frame [std_msgs/Bool data: true]")
     ;
 
     try // parse options
@@ -534,7 +534,7 @@ int main(int argc, char **argv)
     ros::Rate loop_rate(options.frequency);
 
     /// This sets the logger level; use this to disable all ROS prints
-    if ( ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Debug) )
+    if ( ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Info) )
         ros::console::notifyLoggerLevelsChanged();
     else
         std::cout << "Error while setting the logger level!" << std::endl;
@@ -860,7 +860,7 @@ int main(int argc, char **argv)
         if (options.viewDisparities || options.all_data)
         {
             ROS_DEBUG_STREAM("viewDisparities||all " << options.grayscale << " " << options.all_data);
-            cv::namedWindow("Reprojection of Detected Lines", CV_WINDOW_AUTOSIZE);
+            cv::namedWindow("Precomputed Disparities", CV_WINDOW_AUTOSIZE);
             full_filename_Disparities = dir_Disparities + boost::str(boost::format("%010d") % 0 ) + ".png";
             cv_disparities = cv::imread(full_filename_Disparities, CV_LOAD_IMAGE_UNCHANGED);
             cv::waitKey(5);
@@ -1277,7 +1277,7 @@ int main(int argc, char **argv)
                 RTK_MARKER.pose.position.y = xyFromLatLon.y;
                 RTK_MARKER.pose.position.z = 0;
 
-                cout << RTK_MARKER.pose.position.x << "\t" << RTK_MARKER.pose.position.y << endl;
+                ROS_DEBUG_STREAM(RTK_MARKER.pose.position.x << "\t" << RTK_MARKER.pose.position.y);
 
                 marker_array_GT_RTK.markers.push_back(RTK_MARKER);
 
