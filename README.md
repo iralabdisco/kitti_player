@@ -1,13 +1,16 @@
+# kitti_player
+
 From version 2, this node aims to play the whole kitti data into ROS (Color/Grayscale images, Velodyne scan as PCL, sensor_msgs/Imu Message, GPS as sensor_msgs/NavSatFix Message). 
 
-http://www.ira.disco.unimib.it/kitti_player
-https://github.com/iralabdisco/kitti_player
+ * http://www.ira.disco.unimib.it/kitti_player
+ * https://github.com/iralabdisco/kitti_player
 
 =========
 
 Kitti_player, a player for KITTI raw datasets
 Datasets can be downloaded from: http://www.cvlibs.net/datasets/kitti/raw_data.php
 
+```
 Allowed options:
 help           h    help message
 directory      d    *required* - path to the kitti dataset Directory
@@ -47,4 +50,4 @@ kitti_player needs a directory tree like the following:
     │   └── data              
     │     └ timestamps.txt    
     └── calib_cam_to_cam.txt  
-
+```
