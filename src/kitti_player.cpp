@@ -25,6 +25,7 @@
 #include <sstream>
 #include <string>
 #include <ros/ros.h>
+#include <ros/console.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/locale.hpp>
@@ -485,7 +486,7 @@ int main(int argc, char **argv)
 
     try // parse options
     {
-        po::parsed_options parsed = po::command_line_parser(argc - 2, argv).options(desc).allow_unregistered().run();
+        po::parsed_options parsed = po::command_line_parser(argc, argv).options(desc).allow_unregistered().run();
         po::store(parsed, vm);
         po::notify(vm);
 
@@ -1050,7 +1051,7 @@ int main(int argc, char **argv)
                 ifstream timestamps(str_support.c_str());
                 if (!timestamps.is_open())
                 {
-                    ROS_ERROR_STREAM("Fail to open " << timestamps);
+                    ROS_ERROR_STREAM("Fail to open " << str_support);
                     node.shutdown();
                     return -1;
                 }
@@ -1074,7 +1075,7 @@ int main(int argc, char **argv)
                 ifstream timestamps(str_support.c_str());
                 if (!timestamps.is_open())
                 {
-                    ROS_ERROR_STREAM("Fail to open " << timestamps);
+                    ROS_ERROR_STREAM("Fail to open " << str_support);
                     node.shutdown();
                     return -1;
                 }
@@ -1132,7 +1133,7 @@ int main(int argc, char **argv)
                 ifstream timestamps(str_support.c_str());
                 if (!timestamps.is_open())
                 {
-                    ROS_ERROR_STREAM("Fail to open " << timestamps);
+                    ROS_ERROR_STREAM("Fail to open " << str_support);
                     node.shutdown();
                     return -1;
                 }
@@ -1156,7 +1157,7 @@ int main(int argc, char **argv)
                 ifstream timestamps(str_support.c_str());
                 if (!timestamps.is_open())
                 {
-                    ROS_ERROR_STREAM("Fail to open " << timestamps);
+                    ROS_ERROR_STREAM("Fail to open " << str_support);
                     node.shutdown();
                     return -1;
                 }
@@ -1186,7 +1187,7 @@ int main(int argc, char **argv)
                 ifstream timestamps(str_support.c_str());
                 if (!timestamps.is_open())
                 {
-                    ROS_ERROR_STREAM("Fail to open " << timestamps);
+                    ROS_ERROR_STREAM("Fail to open " << str_support);
                     node.shutdown();
                     return -1;
                 }
@@ -1208,7 +1209,7 @@ int main(int argc, char **argv)
                 ifstream timestamps(str_support.c_str());
                 if (!timestamps.is_open())
                 {
-                    ROS_ERROR_STREAM("Fail to open " << timestamps);
+                    ROS_ERROR_STREAM("Fail to open " << str_support);
                     node.shutdown();
                     return -1;
                 }
@@ -1296,7 +1297,7 @@ int main(int argc, char **argv)
                 ifstream timestamps(str_support.c_str());
                 if (!timestamps.is_open())
                 {
-                    ROS_ERROR_STREAM("Fail to open " << timestamps);
+                    ROS_ERROR_STREAM("Fail to open " << str_support);
                     node.shutdown();
                     return -1;
                 }
