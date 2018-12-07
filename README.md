@@ -27,6 +27,7 @@ gpsPoints      p    publish GPS/RTK markers to RVIZ, having reference frame as <
 synchMode      S    Enable Synch mode (wait for signal to load next frame [std_msgs/Bool "data: true"]
 
 kitti_player needs a directory tree like the following:
+
 └── 2011_09_26_drive_0001_sync
     ├── image_00              
     │   └── data              
